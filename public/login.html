@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Limeade</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <h1>Welcome to Limeade</h1>
+      <p>Sign in to create and share levels</p>
+      <div class="oauth-buttons">
+        <button class="oauth-btn google" onclick="loginWithGoogle()">
+          <svg class="icon"><use href="icons.svg#icon-account-circle"/></svg>
+          <span>Continue with Google</span>
+        </button>
+        <button class="oauth-btn discord" onclick="loginWithDiscord()">
+          <svg class="icon"><use href="icons.svg#icon-chat"/></svg>
+          <span>Continue with Discord</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/auth.js"></script>
+</body>
+</html>

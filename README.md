@@ -165,52 +165,67 @@ Authentication
     OAuth 2.0 (Google, Discord)
 
 🚀 Getting Started
-Prerequisites
 
-    Node.js (for running the development server)
+## Prerequisites
 
-Quick Start
+- Node.js (for running the development server)
+
+## Quick Start
 
 Clone the repository:
 
-git clone https://github.com/Forgeio/berry.git
-cd berry
+```bash
+git clone https://github.com/Forgeio/limeade.git
+cd limeade
+```
 
 Start the development server:
 
+```bash
 node server.js
+```
 
 Open your browser and navigate to:
 
+```
 http://localhost:3000
+```
 
-    You'll be greeted with the login page. Click either OAuth button to access the main site.
+You'll be greeted with the login page. Click either OAuth button to access the main site (currently uses mock authentication).
 
-Project Structure
+## Project Structure
 
-berry/
+```
+limeade/
 ├── public/              # Frontend files
 │   ├── css/            # Stylesheets
+│   │   └── styles.css  # Main stylesheet
 │   ├── js/             # JavaScript files
+│   │   ├── auth.js     # Authentication logic
+│   │   ├── discover.js # Discover page functionality
+│   │   ├── leaderboards.js # Leaderboards page functionality
+│   │   └── navigation.js   # Navigation and user menu
+│   ├── icons.svg       # SVG icon sprite
 │   ├── login.html      # Login page
-│   ├── index.html      # Main site
-│   ├── profile.html    # User profile
-│   ├── settings.html   # Settings page
-│   ├── discover.html   # Level discovery
-│   ├── leaderboards.html # Leaderboards
-│   └── editor.html     # Level editor (Phase 2)
+│   ├── discover.html   # Level discovery page
+│   └── leaderboards.html # Leaderboards page
 ├── server.js           # Simple development server
 ├── package.json        # Project metadata
 └── README.md           # This file
+```
 
-Current Status
+## Current Status
 
-✅ Phase 1 (Complete): Authentication & Layout
+✅ **Phase 1 (Complete): Authentication & Layout**
 
-    Login page with OAuth placeholders
-    Main site layout with navigation
-    Profile and settings pages
-    Basic UI framework
+- Login page with OAuth placeholders (Google/Discord)
+- Main site layout with navigation bar
+- Discover page with Hot/Top/New filters
+- Leaderboards page with multiple leaderboard types
+- Fully responsive Material Design UI
+- SVG-based icon system
+- Mock data structures ready for backend
+- Pagination support on all pages
 
 🚧 Phase 2 (Upcoming): Level Editor 🚧 Phase 3 (Upcoming): Backend & Database 🚧 Phase 4 (Upcoming): Gameplay Features 🚧 Phase 5 (Upcoming): Social Features
 📝 License

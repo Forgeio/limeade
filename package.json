@@ -1,0 +1,12 @@
+{
+  "name": "limeade",
+  "version": "1.0.0",
+  "description": "A Mario Maker-inspired level creation and sharing platform",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["game", "platformer", "level-editor"],
+  "author": "",
+  "license": "ISC"
+}
