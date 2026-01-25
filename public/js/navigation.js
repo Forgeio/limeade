@@ -77,10 +77,12 @@ function createLevel() {
   alert('Level editor coming soon!');
 }
 
+function openProfile() {
+  window.location.href = 'profile.html';
+}
+
 function openSettings() {
-  // TODO: Navigate to settings page when implemented
-  console.log('Settings clicked');
-  alert('Settings page coming soon!');
+  window.location.href = 'settings.html';
 }
 
 function logout() {

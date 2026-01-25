@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Settings - Limeade</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    .settings-container {
+      background: var(--card-color);
+      border-radius: 8px;
+      padding: 32px;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .settings-section {
+      margin-bottom: 48px;
+    }
+    
+    .settings-section:last-child {
+      margin-bottom: 0;
+    }
+    
+    .section-header {
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .section-header h2 {
+      font-size: 24px;
+      color: var(--text-primary);
+    }
+
+    .form-group {
+      margin-bottom: 24px;
+      max-width: 400px;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+
+    .avatar-preview-container {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .avatar-preview {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: #424242;
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+      font-weight: 500;
+      border: 2px solid var(--border-color);
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 4px;
+      border: none;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary-color);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #28b02e;
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .btn-outline:hover {
+      background: rgba(0,0,0,0.05);
+    }
+
+    /* Keybindings Style */
+    .keybind-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #f0f0f0;
+      max-width: 600px;
+    }
+
+    .action-name {
+      font-weight: 500;
+    }
+
+    .key-display {
+      background: #eee;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+      cursor: pointer;
+      min-width: 80px;
+      text-align: center;
+      border: 1px solid #ddd;
+    }
+
+    .key-display:hover {
+      background: #e0e0e0;
+      border-color: var(--primary-color);
+    }
+  </style>
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <nav class="navbar">
+    <div class="nav-left">
+      <a href="discover.html" class="site-brand">
+        <svg class="icon"><use href="icons.svg#icon-videogame"/></svg>
+        <span>Limeade</span>
+      </a>
+      <div class="search-container">
+        <svg class="icon"><use href="icons.svg#icon-search"/></svg>
+        <input type="text" class="search-input" placeholder="Search levels..." id="searchInput">
+      </div>
+    </div>
+    <div class="nav-center">
+      <button class="nav-btn" onclick="navigateTo('discover.html')">
+        <svg class="icon"><use href="icons.svg#icon-public"/></svg>
+        <span>Discover</span>
+      </button>
+      <button class="nav-btn" onclick="navigateTo('leaderboards.html')">
+        <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
+        <span>Leaderboards</span>
+      </button>
+    </div>
+    <div class="nav-right">
+      <div class="user-section" id="userSection">
+        <span class="user-name" id="userName">Guest User</span>
+        <div class="user-avatar" id="userAvatar">GU</div>
+        <div class="dropdown-menu" id="dropdownMenu">
+          <button class="dropdown-item create" onclick="createLevel()">
+            <svg class="icon"><use href="icons.svg#icon-add"/></svg>
+            <span>Create</span>
+          </button>
+          <button class="dropdown-item" onclick="openProfile()">
+            <svg class="icon"><use href="icons.svg#icon-person"/></svg>
+            <span>Profile</span>
+          </button>
+          <button class="dropdown-item" onclick="openSettings()">
+            <svg class="icon"><use href="icons.svg#icon-settings"/></svg>
+            <span>Settings</span>
+          </button>
+          <button class="dropdown-item" onclick="logout()">
+            <svg class="icon"><use href="icons.svg#icon-logout"/></svg>
+            <span>Logout</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="main-content">
+    <div class="settings-container">
+      
+      <!-- Profile Settings -->
+      <div class="settings-section">
+        <div class="section-header">
+          <h2>Profile Settings</h2>
+        </div>
+        
+        <div class="avatar-preview-container">
+          <div class="avatar-preview" id="settingsAvatar">GU</div>
+          <div>
+            <button class="btn btn-outline">Change Avatar</button>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">Recommended size: 200x200px</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" class="form-input" id="usernameInput" value="Guest User">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" value="guest@example.com" disabled>
+          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">Email cannot be changed</div>
+        </div>
+        
+        <button class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+      </div>
+
+      <!-- Controls Settings -->
+      <div class="settings-section">
+        <div class="section-header">
+          <h2>Controls</h2>
+        </div>
+        
+        <div class="keybind-row">
+          <span class="action-name">Move Left</span>
+          <div class="key-display">A</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Move Right</span>
+          <div class="key-display">D</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Jump</span>
+          <div class="key-display">Space</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Sprint</span>
+          <div class="key-display">Shift</div>
+        </div>
+        
+        <div style="margin-top: 24px;">
+            <button class="btn btn-primary" onclick="alert('Controls saved!')">Save Controls</button>
+            <button class="btn btn-outline" style="margin-left: 8px;">Reset to Default</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script src="js/navigation.js"></script>
+  <script src="js/settings.js"></script>
+</body>
+</html>
