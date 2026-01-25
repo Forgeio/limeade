@@ -72,9 +72,7 @@ function navigateTo(page) {
 }
 
 function createLevel() {
-  // TODO: Navigate to level editor when implemented
-  console.log('Create level clicked');
-  alert('Level editor coming soon!');
+  window.location.href = 'editor.html';
 }
 
 function openProfile() {
