@@ -10,6 +10,12 @@
 <body>
   <!-- Navigation Bar -->
   <nav class="navbar">
+    <div class="nav-left">
+      <div class="search-container">
+        <svg class="icon"><use href="icons.svg#icon-search"/></svg>
+        <input type="text" class="search-input" placeholder="Search levels..." id="searchInput">
+      </div>
+    </div>
     <div class="nav-center">
       <button class="nav-btn" onclick="navigateTo('discover.html')">
         <svg class="icon"><use href="icons.svg#icon-public"/></svg>
@@ -20,22 +26,24 @@
         <span>Leaderboards</span>
       </button>
     </div>
-    <div class="user-section" id="userSection">
-      <span class="user-name" id="userName">Guest User</span>
-      <div class="user-avatar" id="userAvatar">GU</div>
-      <div class="dropdown-menu" id="dropdownMenu">
-        <button class="dropdown-item create" onclick="createLevel()">
-          <svg class="icon"><use href="icons.svg#icon-add"/></svg>
-          <span>Create</span>
-        </button>
-        <button class="dropdown-item" onclick="openSettings()">
-          <svg class="icon"><use href="icons.svg#icon-settings"/></svg>
-          <span>Settings</span>
-        </button>
-        <button class="dropdown-item" onclick="logout()">
-          <svg class="icon"><use href="icons.svg#icon-logout"/></svg>
-          <span>Logout</span>
-        </button>
+    <div class="nav-right">
+      <div class="user-section" id="userSection">
+        <span class="user-name" id="userName">Guest User</span>
+        <div class="user-avatar" id="userAvatar">GU</div>
+        <div class="dropdown-menu" id="dropdownMenu">
+          <button class="dropdown-item create" onclick="createLevel()">
+            <svg class="icon"><use href="icons.svg#icon-add"/></svg>
+            <span>Create</span>
+          </button>
+          <button class="dropdown-item" onclick="openSettings()">
+            <svg class="icon"><use href="icons.svg#icon-settings"/></svg>
+            <span>Settings</span>
+          </button>
+          <button class="dropdown-item" onclick="logout()">
+            <svg class="icon"><use href="icons.svg#icon-logout"/></svg>
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
     </div>
   </nav>
@@ -51,7 +59,7 @@
     </div>
 
     <!-- Cards Grid -->
-    <div id="cardsContainer" class="cards-grid">
+    <div id="cardsContainer" class="cards-grid leaderboards-list">
       <!-- Player cards will be dynamically inserted here -->
     </div>
 

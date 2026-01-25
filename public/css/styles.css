@@ -87,7 +87,6 @@ body {
 
 .oauth-btn:hover {
   box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
 }
 
 .oauth-btn.google {
@@ -97,7 +96,7 @@ body {
 }
 
 .oauth-btn.google:hover {
-  background: #f8f8f8;
+  background: #e8e8e8;
 }
 
 .oauth-btn.discord {
@@ -128,11 +127,54 @@ body {
   height: 64px;
 }
 
+.nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.search-container {
+  display: flex;
+  align-items: center;
+  background: var(--background-color);
+  border-radius: 4px;
+  padding: 6px 12px;
+  gap: 8px;
+  max-width: 200px;
+}
+
+.search-container .icon {
+  width: 18px;
+  height: 18px;
+  fill: var(--text-secondary);
+}
+
+.search-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 14px;
+  color: var(--text-primary);
+  width: 100%;
+}
+
+.search-input::placeholder {
+  color: var(--text-secondary);
+}
+
 .nav-center {
   display: flex;
   gap: 8px;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.nav-right {
   flex: 1;
-  justify-content: center;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .nav-btn {
@@ -150,7 +192,7 @@ body {
 }
 
 .nav-btn:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .nav-btn.active {
@@ -176,7 +218,7 @@ body {
 }
 
 .user-section:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .user-avatar {
@@ -230,7 +272,7 @@ body {
 }
 
 .dropdown-item:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .dropdown-item.create {
@@ -239,7 +281,7 @@ body {
 }
 
 .dropdown-item.create:hover {
-  background: #45a049;
+  background: #43a047;
 }
 
 .dropdown-item .icon {
@@ -281,7 +323,7 @@ body {
 }
 
 .selector-tab:hover {
-  background: rgba(0, 0, 0, 0.04);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 .selector-tab.active {
@@ -297,6 +339,14 @@ body {
   margin-bottom: 32px;
 }
 
+/* Leaderboards List Layout */
+.cards-grid.leaderboards-list {
+  grid-template-columns: 1fr;
+  max-width: 900px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .level-card {
   background: var(--card-color);
   border-radius: 8px;
@@ -308,7 +358,6 @@ body {
 
 .level-card:hover {
   box-shadow: var(--shadow-md);
-  transform: translateY(-4px);
 }
 
 .level-card-image {
@@ -411,7 +460,6 @@ body {
 
 .player-card:hover {
   box-shadow: var(--shadow-md);
-  transform: translateX(4px);
 }
 
 .player-rank {
@@ -516,6 +564,10 @@ body {
     padding: 0 16px;
   }
 
+  .search-container {
+    max-width: 150px;
+  }
+
   .nav-center {
     gap: 4px;
   }
@@ -548,8 +600,22 @@ body {
 }
 
 @media (max-width: 480px) {
-  .nav-btn span:not(.material-icons) {
+  .search-container {
     display: none;
+  }
+
+  .nav-center {
+    position: static;
+    transform: none;
+  }
+
+  .nav-left {
+    display: none;
+  }
+
+  .nav-btn span:not(.icon) {
+    display: none;
+  }
   }
 
   .player-stats {
