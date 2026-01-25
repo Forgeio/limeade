@@ -32,7 +32,7 @@ const server = http.createServer((req, res) => {
         res.end('404 - File Not Found');
       } else {
         res.writeHead(500);
-        res.end('500 - Internal Server Error: ' + error.code);
+        res.end('500 - Internal Server Error');
       }
     } else {
       res.writeHead(200, { 'Content-Type': contentType });

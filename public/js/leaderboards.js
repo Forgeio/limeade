@@ -71,6 +71,15 @@ function loadPlayers() {
   const pagePlayers = players.slice(startIndex, endIndex);
   
   container.innerHTML = pagePlayers.map(player => createPlayerCard(player)).join('');
+  
+  // Add event listeners for player cards
+  container.querySelectorAll('.player-card').forEach(card => {
+    const playerId = card.dataset.playerId;
+    card.addEventListener('click', () => {
+      viewProfile(playerId);
+    });
+  });
+  
   updatePagination(players.length);
 }
 
@@ -87,8 +96,11 @@ function createPlayerCard(player) {
     .join('')
     .toUpperCase();
   
+  const escapedName = escapeHtml(player.name);
+  const escapedPlaytime = escapeHtml(player.playtime);
+  
   return `
-    <div class="player-card" onclick="viewProfile('${player.id}')">
+    <div class="player-card" data-player-id="${player.id}">
       <div class="player-rank ${rankClass}">
         ${player.rank <= 3 ? rankIcon : player.rank}
       </div>
@@ -96,7 +108,7 @@ function createPlayerCard(player) {
         ${initials}
       </div>
       <div class="player-info">
-        <div class="player-name">${player.name}</div>
+        <div class="player-name">${escapedName}</div>
         <div class="player-stats">
           <div class="player-stat">
             <span class="material-icons">check_circle</span>
@@ -108,12 +120,19 @@ function createPlayerCard(player) {
           </div>
           <div class="player-stat">
             <span class="material-icons">schedule</span>
-            <span>${player.playtime}</span>
+            <span>${escapedPlaytime}</span>
           </div>
         </div>
       </div>
     </div>
   `;
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // Update pagination controls

@@ -4,7 +4,10 @@
 window.addEventListener('DOMContentLoaded', () => {
   const user = checkAuth();
   
-  if (!user && window.location.pathname !== '/login.html') {
+  const pathname = window.location.pathname;
+  const isLoginPage = pathname.endsWith('/login.html') || pathname === '/login.html' || pathname === '/';
+  
+  if (!user && !isLoginPage) {
     window.location.href = 'login.html';
     return;
   }

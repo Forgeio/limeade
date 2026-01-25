@@ -68,19 +68,42 @@ function loadLevels() {
   const pageLevels = levels.slice(startIndex, endIndex);
   
   container.innerHTML = pageLevels.map(level => createLevelCard(level)).join('');
+  
+  // Add event listeners for level cards and play buttons
+  container.querySelectorAll('.level-card').forEach(card => {
+    const levelId = decodeURIComponent(card.dataset.levelId);
+    card.addEventListener('click', (e) => {
+      if (!e.target.closest('.play-btn')) {
+        playLevel(levelId);
+      }
+    });
+  });
+  
+  container.querySelectorAll('.play-btn').forEach(btn => {
+    const levelId = decodeURIComponent(btn.dataset.levelId);
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      playLevel(levelId);
+    });
+  });
+  
   updatePagination(levels.length);
 }
 
 // Create level card HTML
 function createLevelCard(level) {
+  const escapedId = encodeURIComponent(level.id);
+  const escapedTitle = escapeHtml(level.title);
+  const escapedDescription = escapeHtml(level.description);
+  
   return `
-    <div class="level-card" onclick="playLevel('${level.id}')">
+    <div class="level-card" data-level-id="${escapedId}">
       <div class="level-card-image">
         <span class="material-icons">videogame_asset</span>
       </div>
       <div class="level-card-content">
-        <h3 class="level-card-title">${level.title}</h3>
-        <p class="level-card-description">${level.description}</p>
+        <h3 class="level-card-title">${escapedTitle}</h3>
+        <p class="level-card-description">${escapedDescription}</p>
         <div class="level-card-stats">
           <div class="stat-item">
             <span class="material-icons">thumb_up</span>
@@ -98,9 +121,9 @@ function createLevelCard(level) {
         <div class="level-card-footer">
           <div class="record-time">
             <span class="material-icons">timer</span>
-            <span>${level.recordTime}</span>
+            <span>${escapeHtml(level.recordTime)}</span>
           </div>
-          <button class="play-btn" onclick="playLevel('${level.id}'); event.stopPropagation();">
+          <button class="play-btn" data-level-id="${escapedId}">
             <span class="material-icons">play_arrow</span>
             <span>Play</span>
           </button>
@@ -108,6 +131,13 @@ function createLevelCard(level) {
       </div>
     </div>
   `;
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
 
 // Update pagination controls
