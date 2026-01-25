@@ -5,18 +5,22 @@ const router = express.Router();
 // Get levels (discover page)
 router.get('/', async (req, res) => {
   try {
-    const filter = req.query.filter || 'hot'; // hot, top, new
+    const filter = req.query.filter || 'hot';
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 12;
     const offset = (page - 1) * limit;
 
-    let orderBy = 'ls.total_plays DESC, l.published_at DESC'; // hot
-    if (filter === 'top') {
-      orderBy = 'ls.total_likes DESC';
-    } else if (filter === 'new') {
-      orderBy = 'l.published_at DESC';
-    }
+    // Whitelist valid filter options to prevent SQL injection
+    // The orderBy value is only set from this whitelist, never from user input
+    const validOrderBy = {
+      'hot': 'ls.total_plays DESC, l.published_at DESC',
+      'top': 'ls.total_likes DESC',
+      'new': 'l.published_at DESC'
+    };
 
+    const orderBy = validOrderBy[filter] || validOrderBy['hot'];
+
+    // Safe to use string interpolation here as orderBy comes from whitelist above
     const result = await db.query(
       `SELECT l.id, l.title, l.description, l.creator_id, l.published_at,
               u.username as creator_name,

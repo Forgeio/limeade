@@ -92,13 +92,17 @@ router.get('/leaderboard/:type', async (req, res) => {
     const limit = parseInt(req.query.limit) || 15;
     const offset = (page - 1) * limit;
 
-    let orderBy = 'total_clears DESC';
-    if (type === 'records') {
-      orderBy = 'total_records DESC';
-    } else if (type === 'playtime') {
-      orderBy = 'total_playtime DESC';
-    }
+    // Whitelist valid order by options to prevent SQL injection
+    // The orderBy value is only set from this whitelist, never from user input
+    const validOrderBy = {
+      'clears': 'total_clears DESC',
+      'records': 'total_records DESC',
+      'playtime': 'total_playtime DESC'
+    };
 
+    const orderBy = validOrderBy[type] || 'total_clears DESC';
+
+    // Safe to use string interpolation here as orderBy comes from whitelist above
     const result = await db.query(
       `SELECT u.id, u.username, u.avatar_url, us.*
        FROM users u
