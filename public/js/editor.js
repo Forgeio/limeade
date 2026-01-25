@@ -400,11 +400,16 @@ async function createNewDraft() {
       const newUrl = `${window.location.pathname}?id=${level.id}`;
       window.history.replaceState({}, '', newUrl);
     } else {
-      updateStatus('Error creating draft');
+      // If backend auth fails, use local storage for demo
+      console.log('Using local storage for draft');
+      editor.levelId = 'local-' + Date.now();
+      updateStatus('Ready (local mode)');
     }
   } catch (err) {
     console.error('Error creating draft:', err);
-    updateStatus('Error creating draft');
+    // Fall back to local storage
+    editor.levelId = 'local-' + Date.now();
+    updateStatus('Ready (local mode)');
   }
 }
 
@@ -439,6 +444,17 @@ async function loadLevel(levelId) {
 // Auto-save the level
 async function autoSave() {
   if (!editor.levelId) {
+    return;
+  }
+  
+  // Skip if using local storage
+  if (editor.levelId.startsWith('local-')) {
+    // Save to local storage
+    localStorage.setItem('levelDraft-' + editor.levelId, JSON.stringify({
+      width: editor.gridWidth,
+      height: editor.gridHeight,
+      tiles: editor.levelData
+    }));
     return;
   }
   
