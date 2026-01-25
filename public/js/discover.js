@@ -99,32 +99,32 @@ function createLevelCard(level) {
   return `
     <div class="level-card" data-level-id="${escapedId}">
       <div class="level-card-image">
-        <span class="material-icons">videogame_asset</span>
+        <svg class="icon" style="width: 48px; height: 48px;"><use href="icons.svg#icon-videogame"/></svg>
       </div>
       <div class="level-card-content">
         <h3 class="level-card-title">${escapedTitle}</h3>
         <p class="level-card-description">${escapedDescription}</p>
         <div class="level-card-stats">
           <div class="stat-item">
-            <span class="material-icons">thumb_up</span>
+            <svg class="icon"><use href="icons.svg#icon-thumb-up"/></svg>
             <span>${level.likes}</span>
           </div>
           <div class="stat-item">
-            <span class="material-icons">thumb_down</span>
+            <svg class="icon"><use href="icons.svg#icon-thumb-down"/></svg>
             <span>${level.dislikes}</span>
           </div>
           <div class="stat-item">
-            <span class="material-icons">play_arrow</span>
+            <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
             <span>${level.plays}</span>
           </div>
         </div>
         <div class="level-card-footer">
           <div class="record-time">
-            <span class="material-icons">timer</span>
+            <svg class="icon"><use href="icons.svg#icon-timer"/></svg>
             <span>${escapeHtml(level.recordTime)}</span>
           </div>
           <button class="play-btn" data-level-id="${escapedId}">
-            <span class="material-icons">play_arrow</span>
+            <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
             <span>Play</span>
           </button>
         </div>

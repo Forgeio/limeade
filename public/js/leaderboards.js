@@ -87,7 +87,7 @@ function loadPlayers() {
 function createPlayerCard(player) {
   const rankClass = player.rank === 1 ? 'gold' : player.rank === 2 ? 'silver' : player.rank === 3 ? 'bronze' : '';
   const rankIcon = player.rank <= 3 ? 
-    `<span class="material-icons">emoji_events</span>` : 
+    `<svg class="icon" style="width: 24px; height: 24px;"><use href="icons.svg#icon-trophy"/></svg>` : 
     player.rank;
   
   const initials = player.name
@@ -111,15 +111,15 @@ function createPlayerCard(player) {
         <div class="player-name">${escapedName}</div>
         <div class="player-stats">
           <div class="player-stat">
-            <span class="material-icons">check_circle</span>
+            <svg class="icon"><use href="icons.svg#icon-check-circle"/></svg>
             <span>${player.clears} clears</span>
           </div>
           <div class="player-stat">
-            <span class="material-icons">emoji_events</span>
+            <svg class="icon"><use href="icons.svg#icon-trophy"/></svg>
             <span>${player.records} records</span>
           </div>
           <div class="player-stat">
-            <span class="material-icons">schedule</span>
+            <svg class="icon"><use href="icons.svg#icon-schedule"/></svg>
             <span>${escapedPlaytime}</span>
           </div>
         </div>

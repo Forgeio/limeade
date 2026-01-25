@@ -6,18 +6,17 @@
   <title>Leaderboards - Limeade</title>
   <link rel="stylesheet" href="css/styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 </head>
 <body>
   <!-- Navigation Bar -->
   <nav class="navbar">
     <div class="nav-center">
       <button class="nav-btn" onclick="navigateTo('discover.html')">
-        <span class="material-icons">public</span>
+        <svg class="icon"><use href="icons.svg#icon-public"/></svg>
         <span>Discover</span>
       </button>
       <button class="nav-btn active" onclick="navigateTo('leaderboards.html')">
-        <span class="material-icons">leaderboard</span>
+        <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
         <span>Leaderboards</span>
       </button>
     </div>
@@ -26,15 +25,15 @@
       <div class="user-avatar" id="userAvatar">GU</div>
       <div class="dropdown-menu" id="dropdownMenu">
         <button class="dropdown-item create" onclick="createLevel()">
-          <span class="material-icons">add</span>
+          <svg class="icon"><use href="icons.svg#icon-add"/></svg>
           <span>Create</span>
         </button>
         <button class="dropdown-item" onclick="openSettings()">
-          <span class="material-icons">settings</span>
+          <svg class="icon"><use href="icons.svg#icon-settings"/></svg>
           <span>Settings</span>
         </button>
         <button class="dropdown-item" onclick="logout()">
-          <span class="material-icons">logout</span>
+          <svg class="icon"><use href="icons.svg#icon-logout"/></svg>
           <span>Logout</span>
         </button>
       </div>
@@ -59,13 +58,13 @@
     <!-- Pagination -->
     <div class="pagination">
       <button class="pagination-btn" id="prevBtn" onclick="prevPage()">
-        <span class="material-icons">chevron_left</span>
+        <svg class="icon"><use href="icons.svg#icon-chevron-left"/></svg>
         <span>Previous</span>
       </button>
       <span class="pagination-info" id="pageInfo">Page 1 of 1</span>
       <button class="pagination-btn" id="nextBtn" onclick="nextPage()">
         <span>Next</span>
-        <span class="material-icons">chevron_right</span>
+        <svg class="icon"><use href="icons.svg#icon-chevron-right"/></svg>
       </button>
     </div>
   </div>

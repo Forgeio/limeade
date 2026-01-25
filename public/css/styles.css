@@ -12,6 +12,15 @@
   --shadow-lg: 0 8px 16px rgba(0,0,0,0.15);
 }
 
+/* Icon Styling */
+.icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  vertical-align: middle;
+  display: inline-block;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -100,8 +109,9 @@ body {
   background: #4752C4;
 }
 
-.oauth-btn .material-icons {
-  font-size: 20px;
+.oauth-btn .icon {
+  width: 20px;
+  height: 20px;
 }
 
 /* Navigation Bar */
@@ -148,8 +158,9 @@ body {
   background: rgba(25, 118, 210, 0.08);
 }
 
-.nav-btn .material-icons {
-  font-size: 20px;
+.nav-btn .icon {
+  width: 20px;
+  height: 20px;
 }
 
 /* User Profile Section */
@@ -231,8 +242,9 @@ body {
   background: #45a049;
 }
 
-.dropdown-item .material-icons {
-  font-size: 20px;
+.dropdown-item .icon {
+  width: 20px;
+  height: 20px;
 }
 
 /* Main Content */
@@ -346,8 +358,9 @@ body {
   gap: 4px;
 }
 
-.stat-item .material-icons {
-  font-size: 16px;
+.stat-item .icon {
+  width: 16px;
+  height: 16px;
 }
 
 .level-card-footer {
@@ -552,8 +565,9 @@ body {
   color: var(--text-secondary);
 }
 
-.loading .material-icons {
-  font-size: 48px;
+.loading .icon {
+  width: 48px;
+  height: 48px;
   animation: spin 1s linear infinite;
 }
 
@@ -569,8 +583,9 @@ body {
   color: var(--text-secondary);
 }
 
-.empty-state .material-icons {
-  font-size: 64px;
+.empty-state .icon {
+  width: 64px;
+  height: 64px;
   margin-bottom: 16px;
   opacity: 0.5;
 }
