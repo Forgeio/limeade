@@ -2,7 +2,7 @@
 
 let currentTab = 'global-clears';
 let currentPage = 1;
-const itemsPerPage = 10;
+const itemsPerPage = 15;
 
 // Mock data for demonstration
 const mockPlayers = {
