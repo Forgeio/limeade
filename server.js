@@ -1,46 +1,78 @@
-const http = require('http');
-const fs = require('fs');
+const express = require('express');
+const session = require('express-session');
+const passport = require('./backend/config/passport');
+const cors = require('cors');
 const path = require('path');
+require('dotenv').config();
 
-const PORT = 3000;
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-const mimeTypes = {
-  '.html': 'text/html',
-  '.css': 'text/css',
-  '.js': 'text/javascript',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon'
-};
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || 'limeade-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 1 week
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+    },
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
 
-const server = http.createServer((req, res) => {
-  let filePath = './public' + req.url;
-  if (filePath === './public/') {
-    filePath = './public/login.html';
-  }
+// Serve static files
+app.use(express.static(path.join(__dirname, 'public')));
 
-  const extname = String(path.extname(filePath)).toLowerCase();
-  const contentType = mimeTypes[extname] || 'application/octet-stream';
+// API Routes
+app.use('/auth', require('./backend/routes/auth'));
+app.use('/api/users', require('./backend/routes/users'));
+app.use('/api/levels', require('./backend/routes/levels'));
 
-  fs.readFile(filePath, (error, content) => {
-    if (error) {
-      if (error.code === 'ENOENT') {
-        res.writeHead(404);
-        res.end('404 - File Not Found');
-      } else {
-        res.writeHead(500);
-        res.end('500 - Internal Server Error');
-      }
-    } else {
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content, 'utf-8');
-    }
-  });
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Limeade API is running' });
 });
 
-server.listen(PORT, () => {
+// Serve login page as default
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+// 404 handler for API routes
+app.use('/api/*', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found' });
+});
+
+// Serve frontend pages for other routes
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}/`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('\nAvailable endpoints:');
+  console.log('  - GET  /api/health');
+  console.log('  - GET  /auth/google');
+  console.log('  - GET  /auth/discord');
+  console.log('  - GET  /auth/user');
+  console.log('  - POST /auth/logout');
+  console.log('  - GET  /api/users/:id');
+  console.log('  - GET  /api/users/:id/levels');
+  console.log('  - GET  /api/users/leaderboard/:type');
+  console.log('  - GET  /api/levels');
+  console.log('  - GET  /api/levels/:id');
+  console.log('  - POST /api/levels');
+  console.log('  - PUT  /api/levels/:id');
+  console.log('  - DELETE /api/levels/:id');
+  console.log('  - POST /api/levels/:id/like');
+  console.log('  - POST /api/levels/:id/play');
 });
+

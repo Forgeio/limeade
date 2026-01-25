@@ -209,10 +209,81 @@ limeade/
 │   ├── login.html      # Login page
 │   ├── discover.html   # Level discovery page
 │   └── leaderboards.html # Leaderboards page
-├── server.js           # Simple development server
+├── backend/            # Backend files
+│   ├── config/         # Configuration files
+│   │   ├── database.js # PostgreSQL connection
+│   │   └── passport.js # OAuth strategies
+│   ├── routes/         # API routes
+│   │   ├── auth.js     # Authentication endpoints
+│   │   ├── users.js    # User endpoints
+│   │   └── levels.js   # Level endpoints
+│   └── middleware/     # Middleware functions
+│       └── auth.js     # Authentication middleware
+├── scripts/            # Utility scripts
+│   ├── setup-database.js # Database schema setup
+│   └── seed-database.js  # Test data seeding
+├── server.js           # Express server
 ├── package.json        # Project metadata
+├── .env.example        # Environment variables template
+├── BACKEND_SETUP.md    # Backend setup guide
 └── README.md           # This file
 ```
+
+## Backend Setup
+
+The backend uses Node.js with Express and PostgreSQL. For detailed setup instructions, see [BACKEND_SETUP.md](BACKEND_SETUP.md).
+
+### Quick Setup
+
+1. Install PostgreSQL and create database:
+```bash
+sudo service postgresql start
+sudo -u postgres psql -c "CREATE DATABASE limeade;"
+```
+
+2. Configure environment:
+```bash
+cp .env.example .env
+# Edit .env with your database credentials
+```
+
+3. Setup database schema and seed test data:
+```bash
+npm run db:setup
+npm run db:seed
+```
+
+4. Start the server:
+```bash
+npm start
+```
+
+### API Endpoints
+
+#### Authentication
+- `GET /auth/google` - Initiate Google OAuth login
+- `GET /auth/discord` - Initiate Discord OAuth login
+- `GET /auth/user` - Get current authenticated user
+- `POST /auth/logout` - Logout user
+
+#### Users & Leaderboards
+- `GET /api/users/:id` - Get user profile and stats
+- `GET /api/users/:id/levels` - Get levels created by user
+- `GET /api/users/leaderboard/:type` - Get leaderboard
+  - Types: `clears`, `records`, `playtime`
+  - Query params: `page`, `limit`
+
+#### Levels
+- `GET /api/levels` - Get levels (discover page)
+  - Query params: `filter` (hot/top/new), `page`, `limit`
+- `GET /api/levels/:id` - Get single level details
+- `POST /api/levels` - Create new level (requires auth)
+- `PUT /api/levels/:id` - Update level (requires auth & ownership)
+- `DELETE /api/levels/:id` - Delete level (requires auth & ownership)
+- `POST /api/levels/:id/like` - Like/dislike level (requires auth)
+- `POST /api/levels/:id/play` - Record a play (requires auth)
+
+For complete API documentation and examples, see [BACKEND_SETUP.md](BACKEND_SETUP.md).
 
 ## Current Status
 
@@ -224,10 +295,24 @@ limeade/
 - Leaderboards page with multiple leaderboard types
 - Fully responsive Material Design UI
 - SVG-based icon system
-- Mock data structures ready for backend
 - Pagination support on all pages
 
-🚧 Phase 2 (Upcoming): Level Editor 🚧 Phase 3 (Upcoming): Backend & Database 🚧 Phase 4 (Upcoming): Gameplay Features 🚧 Phase 5 (Upcoming): Social Features
+✅ **Phase 3 (Complete): Backend & Database**
+
+- PostgreSQL database with complete schema
+- OAuth authentication (Google & Discord)
+- RESTful API for users, levels, and stats
+- User profiles and statistics tracking
+- Level storage and retrieval
+- Leaderboard system (clears, records, playtime)
+- Level likes/dislikes and play tracking
+- Test data seeding
+- Frontend integrated with real APIs
+
+🚧 **Phase 2 (Upcoming): Level Editor**
+🚧 **Phase 4 (Upcoming): Gameplay Features**
+🚧 **Phase 5 (Upcoming): Social Features**
+
 📝 License
 
 License information coming soon.

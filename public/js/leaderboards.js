@@ -4,32 +4,6 @@ let currentTab = 'global-clears';
 let currentPage = 1;
 const itemsPerPage = 15;
 
-// Mock data for demonstration
-const mockPlayers = {
-  'global-clears': generateMockPlayers(30, 'clears'),
-  'global-records': generateMockPlayers(30, 'records'),
-  'friend-clears': generateMockPlayers(15, 'clears'),
-  'friend-records': generateMockPlayers(15, 'records')
-};
-
-function generateMockPlayers(count, type) {
-  const players = [];
-  const names = ['Alex', 'Jordan', 'Taylor', 'Morgan', 'Casey', 'Riley', 'Jamie', 'Quinn', 'Avery', 'Drew'];
-  
-  for (let i = 0; i < count; i++) {
-    const name = `${names[i % names.length]} ${String.fromCharCode(65 + Math.floor(i / names.length))}`;
-    players.push({
-      id: i + 1,
-      rank: i + 1,
-      name: name,
-      clears: type === 'clears' ? Math.floor(1000 - i * 20 - Math.random() * 20) : Math.floor(500 - i * 10),
-      records: type === 'records' ? Math.floor(100 - i * 2 - Math.random() * 2) : Math.floor(50 - i),
-      playtime: `${Math.floor(50 + i * 2)}h`
-    });
-  }
-  return players;
-}
-
 // Initialize page
 window.addEventListener('DOMContentLoaded', () => {
   loadPlayers();
@@ -50,37 +24,70 @@ function switchTab(tab) {
 }
 
 // Load players for current tab and page
-function loadPlayers() {
+async function loadPlayers() {
   const container = document.getElementById('cardsContainer');
-  const players = mockPlayers[currentTab];
   
-  if (!players || players.length === 0) {
+  try {
+    // Determine leaderboard type
+    let leaderboardType = 'clears';
+    if (currentTab.includes('records')) {
+      leaderboardType = 'records';
+    } else if (currentTab.includes('playtime')) {
+      leaderboardType = 'playtime';
+    }
+    
+    // For friend leaderboards, we'll use the same API for now
+    // TODO: Implement friend filtering when friend system is added
+    
+    // Fetch players from API
+    const response = await fetch(`/api/users/leaderboard/${leaderboardType}?page=${currentPage}&limit=${itemsPerPage}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch leaderboard');
+    }
+    
+    const data = await response.json();
+    const players = data.players;
+    
+    if (!players || players.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <span class="material-icons">group</span>
+          <h3>No players found</h3>
+          <p>Check back later for leaderboard data!</p>
+        </div>
+      `;
+      updatePagination(0);
+      return;
+    }
+    
+    // Add rank based on page and index
+    const rankedPlayers = players.map((player, index) => ({
+      ...player,
+      rank: (currentPage - 1) * itemsPerPage + index + 1
+    }));
+    
+    container.innerHTML = rankedPlayers.map(player => createPlayerCard(player)).join('');
+    
+    // Add event listeners for player cards
+    container.querySelectorAll('.player-card').forEach(card => {
+      const playerId = card.dataset.playerId;
+      card.addEventListener('click', () => {
+        viewProfile(playerId);
+      });
+    });
+    
+    updatePagination(data.pagination.totalCount);
+  } catch (err) {
+    console.error('Error loading leaderboard:', err);
     container.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <span class="material-icons">group</span>
-        <h3>No players found</h3>
-        <p>Check back later for leaderboard data!</p>
+        <span class="material-icons">error</span>
+        <h3>Error loading leaderboard</h3>
+        <p>Please try again later.</p>
       </div>
     `;
-    updatePagination(0);
-    return;
   }
-  
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const pagePlayers = players.slice(startIndex, endIndex);
-  
-  container.innerHTML = pagePlayers.map(player => createPlayerCard(player)).join('');
-  
-  // Add event listeners for player cards
-  container.querySelectorAll('.player-card').forEach(card => {
-    const playerId = card.dataset.playerId;
-    card.addEventListener('click', () => {
-      viewProfile(playerId);
-    });
-  });
-  
-  updatePagination(players.length);
 }
 
 // Create player card HTML
@@ -90,14 +97,18 @@ function createPlayerCard(player) {
     `<svg class="icon" style="width: 24px; height: 24px;"><use href="icons.svg#icon-trophy"/></svg>` : 
     player.rank;
   
-  const initials = player.name
+  const initials = player.username
     .split(' ')
     .map(word => word[0])
     .join('')
-    .toUpperCase();
+    .toUpperCase()
+    .substring(0, 2);
   
-  const escapedName = escapeHtml(player.name);
-  const escapedPlaytime = escapeHtml(player.playtime);
+  const escapedName = escapeHtml(player.username);
+  
+  // Format playtime (convert seconds to hours)
+  const playtimeHours = Math.floor((player.total_playtime || 0) / 3600);
+  const escapedPlaytime = `${playtimeHours}h`;
   
   return `
     <div class="player-card" data-player-id="${player.id}">
@@ -112,11 +123,11 @@ function createPlayerCard(player) {
         <div class="player-stats">
           <div class="player-stat">
             <svg class="icon"><use href="icons.svg#icon-check-circle"/></svg>
-            <span>${player.clears} clears</span>
+            <span>${player.total_clears || 0} clears</span>
           </div>
           <div class="player-stat">
             <svg class="icon"><use href="icons.svg#icon-trophy"/></svg>
-            <span>${player.records} records</span>
+            <span>${player.total_records || 0} records</span>
           </div>
           <div class="player-stat">
             <svg class="icon"><use href="icons.svg#icon-schedule"/></svg>
@@ -157,14 +168,9 @@ function prevPage() {
 }
 
 function nextPage() {
-  const players = mockPlayers[currentTab];
-  const totalPages = Math.ceil(players.length / itemsPerPage);
-  
-  if (currentPage < totalPages) {
-    currentPage++;
-    loadPlayers();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  currentPage++;
+  loadPlayers();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // View player profile (placeholder)
