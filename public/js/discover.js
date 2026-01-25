@@ -4,29 +4,6 @@ let currentTab = 'hot';
 let currentPage = 1;
 const itemsPerPage = 12;
 
-// Mock data for demonstration
-const mockLevels = {
-  hot: generateMockLevels(36, 'hot'),
-  top: generateMockLevels(36, 'top'),
-  new: generateMockLevels(36, 'new')
-};
-
-function generateMockLevels(count, type) {
-  const levels = [];
-  for (let i = 0; i < count; i++) {
-    levels.push({
-      id: `${type}-${i}`,
-      title: `${type.charAt(0).toUpperCase() + type.slice(1)} Level ${i + 1}`,
-      description: 'An exciting platformer level with challenging obstacles and hidden secrets. Can you complete it?',
-      likes: Math.floor(Math.random() * 500),
-      dislikes: Math.floor(Math.random() * 50),
-      plays: Math.floor(Math.random() * 1000),
-      recordTime: `${Math.floor(Math.random() * 5)}:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`
-    });
-  }
-  return levels;
-}
-
 // Initialize page
 window.addEventListener('DOMContentLoaded', () => {
   loadLevels();
@@ -47,54 +24,78 @@ function switchTab(tab) {
 }
 
 // Load levels for current tab and page
-function loadLevels() {
+async function loadLevels() {
   const container = document.getElementById('cardsContainer');
-  const levels = mockLevels[currentTab];
   
-  if (!levels || levels.length === 0) {
+  try {
+    // Fetch levels from API
+    const response = await fetch(`/api/levels?filter=${currentTab}&page=${currentPage}&limit=${itemsPerPage}`);
+    
+    if (!response.ok) {
+      throw new Error('Failed to fetch levels');
+    }
+    
+    const data = await response.json();
+    const levels = data.levels;
+    
+    if (!levels || levels.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <span class="material-icons">inbox</span>
+          <h3>No levels found</h3>
+          <p>Check back later for new levels!</p>
+        </div>
+      `;
+      updatePagination(0);
+      return;
+    }
+    
+    container.innerHTML = levels.map(level => createLevelCard(level)).join('');
+    
+    // Add event listeners for level cards and play buttons
+    container.querySelectorAll('.level-card').forEach(card => {
+      const levelId = card.dataset.levelId;
+      card.addEventListener('click', (e) => {
+        if (!e.target.closest('.play-btn')) {
+          playLevel(levelId);
+        }
+      });
+    });
+    
+    container.querySelectorAll('.play-btn').forEach(btn => {
+      const levelId = btn.dataset.levelId;
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playLevel(levelId);
+      });
+    });
+    
+    updatePagination(data.pagination.totalCount);
+  } catch (err) {
+    console.error('Error loading levels:', err);
     container.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1;">
-        <span class="material-icons">inbox</span>
-        <h3>No levels found</h3>
-        <p>Check back later for new levels!</p>
+        <span class="material-icons">error</span>
+        <h3>Error loading levels</h3>
+        <p>Please try again later.</p>
       </div>
     `;
-    updatePagination(0);
-    return;
   }
-  
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const pageLevels = levels.slice(startIndex, endIndex);
-  
-  container.innerHTML = pageLevels.map(level => createLevelCard(level)).join('');
-  
-  // Add event listeners for level cards and play buttons
-  container.querySelectorAll('.level-card').forEach(card => {
-    const levelId = decodeURIComponent(card.dataset.levelId);
-    card.addEventListener('click', (e) => {
-      if (!e.target.closest('.play-btn')) {
-        playLevel(levelId);
-      }
-    });
-  });
-  
-  container.querySelectorAll('.play-btn').forEach(btn => {
-    const levelId = decodeURIComponent(btn.dataset.levelId);
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      playLevel(levelId);
-    });
-  });
-  
-  updatePagination(levels.length);
 }
 
 // Create level card HTML
 function createLevelCard(level) {
-  const escapedId = encodeURIComponent(level.id);
+  const escapedId = level.id;
   const escapedTitle = escapeHtml(level.title);
-  const escapedDescription = escapeHtml(level.description);
+  const escapedDescription = escapeHtml(level.description || '');
+  
+  // Format record time (convert seconds to MM:SS)
+  let recordTime = '0:00';
+  if (level.world_record_time) {
+    const minutes = Math.floor(level.world_record_time / 60);
+    const seconds = level.world_record_time % 60;
+    recordTime = `${minutes}:${String(seconds).padStart(2, '0')}`;
+  }
   
   return `
     <div class="level-card" data-level-id="${escapedId}">
@@ -107,21 +108,21 @@ function createLevelCard(level) {
         <div class="level-card-stats">
           <div class="stat-item">
             <svg class="icon"><use href="icons.svg#icon-thumb-up"/></svg>
-            <span>${level.likes}</span>
+            <span>${level.total_likes || 0}</span>
           </div>
           <div class="stat-item">
             <svg class="icon"><use href="icons.svg#icon-thumb-down"/></svg>
-            <span>${level.dislikes}</span>
+            <span>${level.total_dislikes || 0}</span>
           </div>
           <div class="stat-item">
             <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
-            <span>${level.plays}</span>
+            <span>${level.total_plays || 0}</span>
           </div>
         </div>
         <div class="level-card-footer">
           <div class="record-time">
             <svg class="icon"><use href="icons.svg#icon-timer"/></svg>
-            <span>${escapeHtml(level.recordTime)}</span>
+            <span>${recordTime}</span>
           </div>
           <button class="play-btn" data-level-id="${escapedId}">
             <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
@@ -162,14 +163,9 @@ function prevPage() {
 }
 
 function nextPage() {
-  const levels = mockLevels[currentTab];
-  const totalPages = Math.ceil(levels.length / itemsPerPage);
-  
-  if (currentPage < totalPages) {
-    currentPage++;
-    loadLevels();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+  currentPage++;
+  loadLevels();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // Play level function (placeholder)
