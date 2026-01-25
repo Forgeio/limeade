@@ -1,5 +1,8 @@
 // Level Editor JavaScript
 
+// Constants
+const CAMERA_MOVE_SPEED = 8;
+
 // Editor state
 const editor = {
   levelId: null,
@@ -12,6 +15,8 @@ const editor = {
   cameraY: 0,
   selectedTile: 'ground',
   levelData: {},
+  spawnPosition: null, // Track spawn position
+  goalPosition: null,  // Track goal position
   isDragging: false,
   lastSaveTime: Date.now(),
   autoSaveInterval: 5000, // Auto-save every 5 seconds
@@ -148,17 +153,28 @@ function placeTile(e) {
   
   // Right click (button 2) removes tiles
   if (e.button === 2) {
+    const tileType = editor.levelData[key];
+    if (tileType === 'spawn') {
+      editor.spawnPosition = null;
+    } else if (tileType === 'goal') {
+      editor.goalPosition = null;
+    }
     delete editor.levelData[key];
   } else {
     // Left click (button 0) places tiles
     // Special handling for spawn and goal - only one allowed
-    if (editor.selectedTile === 'spawn' || editor.selectedTile === 'goal') {
-      // Remove existing spawn/goal
-      Object.keys(editor.levelData).forEach(k => {
-        if (editor.levelData[k] === editor.selectedTile) {
-          delete editor.levelData[k];
-        }
-      });
+    if (editor.selectedTile === 'spawn') {
+      // Remove existing spawn
+      if (editor.spawnPosition) {
+        delete editor.levelData[editor.spawnPosition];
+      }
+      editor.spawnPosition = key;
+    } else if (editor.selectedTile === 'goal') {
+      // Remove existing goal
+      if (editor.goalPosition) {
+        delete editor.levelData[editor.goalPosition];
+      }
+      editor.goalPosition = key;
     }
     editor.levelData[key] = editor.selectedTile;
   }
@@ -181,21 +197,19 @@ function handleKeyUp(e) {
 
 // Update camera position based on input
 function updateCamera() {
-  const moveSpeed = 8;
-  
   if (editor.keys.w || editor.keys.ArrowUp) {
-    editor.cameraY = Math.max(0, editor.cameraY - moveSpeed);
+    editor.cameraY = Math.max(0, editor.cameraY - CAMERA_MOVE_SPEED);
   }
   if (editor.keys.s || editor.keys.ArrowDown) {
     const maxY = Math.max(0, editor.gridHeight * editor.tileSize - editor.canvas.height);
-    editor.cameraY = Math.min(maxY, editor.cameraY + moveSpeed);
+    editor.cameraY = Math.min(maxY, editor.cameraY + CAMERA_MOVE_SPEED);
   }
   if (editor.keys.a || editor.keys.ArrowLeft) {
-    editor.cameraX = Math.max(0, editor.cameraX - moveSpeed);
+    editor.cameraX = Math.max(0, editor.cameraX - CAMERA_MOVE_SPEED);
   }
   if (editor.keys.d || editor.keys.ArrowRight) {
     const maxX = Math.max(0, editor.gridWidth * editor.tileSize - editor.canvas.width);
-    editor.cameraX = Math.min(maxX, editor.cameraX + moveSpeed);
+    editor.cameraX = Math.min(maxX, editor.cameraX + CAMERA_MOVE_SPEED);
   }
 }
 
@@ -368,7 +382,8 @@ function drawTile(ctx, type, x, y, size) {
 // Create a new draft
 async function createNewDraft() {
   try {
-    const user = checkAuth();
+    // Check if checkAuth function exists (from navigation.js)
+    const user = typeof checkAuth === 'function' ? checkAuth() : null;
     if (!user) {
       alert('You must be logged in to create levels');
       window.location.href = 'login.html';
@@ -426,6 +441,15 @@ async function loadLevel(levelId) {
         editor.gridWidth = level.level_data.width || 50;
         editor.gridHeight = level.level_data.height || 20;
         editor.levelData = level.level_data.tiles || {};
+        
+        // Restore spawn and goal positions
+        Object.keys(editor.levelData).forEach(key => {
+          if (editor.levelData[key] === 'spawn') {
+            editor.spawnPosition = key;
+          } else if (editor.levelData[key] === 'goal') {
+            editor.goalPosition = key;
+          }
+        });
       }
       
       updateStatus('Level loaded');
@@ -513,6 +537,12 @@ function applyResize() {
     Object.keys(editor.levelData).forEach(key => {
       const [x, y] = key.split(',').map(Number);
       if (x >= width || y >= height) {
+        const tileType = editor.levelData[key];
+        if (tileType === 'spawn') {
+          editor.spawnPosition = null;
+        } else if (tileType === 'goal') {
+          editor.goalPosition = null;
+        }
         delete editor.levelData[key];
       }
     });
