@@ -1,9 +1,17 @@
 const TILE_SIZE = 32;
 const GRAVITY = 0.8;
 const JUMP_VELOCITY = -12;
-const WALK_SPEED = 3;
-const RUN_SPEED = 5;
+const WALK_SPEED = 5;
+const RUN_SPEED = 8;
 const MAX_FALL_SPEED = 16;
+const ACCELERATION = 0.5;
+const FRICTION = 0.85;
+const AIR_FRICTION = 0.95;
+const STOMP_THRESHOLD = 10; // pixels for stomp detection
+const STOMP_BOUNCE = 0.5; // multiplier for bounce height when stomping
+const DEATH_DURATION = 90; // frames (~1.5 seconds at 60fps)
+const DEATH_RISE_DURATION = 30; // frames for rise phase
+const DEATH_SPIN_SPEED = 4; // rotation multiplier
 
 const game = {
   canvas: null,
@@ -22,7 +30,10 @@ const game = {
     height: 30,
     velX: 0,
     velY: 0,
-    onGround: false
+    onGround: false,
+    dead: false,
+    deathTimer: 0,
+    deathVelY: 0
   },
   keys: {
     left: false,
@@ -33,7 +44,14 @@ const game = {
   camera: {
     x: 0,
     y: 0
-  }
+  },
+  timer: {
+    started: false,
+    startTime: 0,
+    currentTime: 0,
+    finalTime: 0
+  },
+  levelCompleted: false
 };
 
 function initGame() {
@@ -175,6 +193,15 @@ function resetPlayer() {
   game.player.velX = 0;
   game.player.velY = 0;
   game.player.onGround = false;
+  game.player.dead = false;
+  game.player.deathTimer = 0;
+  game.player.deathVelY = 0;
+  
+  // Reset timer
+  game.timer.started = false;
+  game.timer.startTime = 0;
+  game.timer.currentTime = 0;
+  game.levelCompleted = false;
 }
 
 let lastTime = 0;
@@ -201,23 +228,50 @@ function gameLoop(timestamp) {
 }
 
 function update() {
+  // Update timer if started and not completed
+  if (game.timer.started && !game.levelCompleted && !game.player.dead) {
+    game.timer.currentTime = performance.now() - game.timer.startTime;
+  }
+  
+  // Handle death animation
+  if (game.player.dead) {
+    updateDeathAnimation();
+    updateCamera();
+    return;
+  }
+  
   updatePlayer();
   updateEnemies();
   checkPlayerHazards();
+  checkGoalCollision();
   updateCamera();
 }
 
 function updatePlayer() {
   const player = game.player;
-  const speed = game.keys.run ? RUN_SPEED : WALK_SPEED;
+  const maxSpeed = game.keys.run ? RUN_SPEED : WALK_SPEED;
 
-  if (game.keys.left) {
-    player.velX = -speed;
-  } else if (game.keys.right) {
-    player.velX = speed;
-  } else {
-    player.velX = 0;
+  // Start timer on first input
+  if (!game.timer.started && (game.keys.left || game.keys.right || game.keys.jump)) {
+    game.timer.started = true;
+    game.timer.startTime = performance.now();
   }
+
+  // Apply acceleration
+  if (game.keys.left) {
+    player.velX -= ACCELERATION;
+  } else if (game.keys.right) {
+    player.velX += ACCELERATION;
+  } else {
+    // Apply friction when no input
+    const friction = player.onGround ? FRICTION : AIR_FRICTION;
+    player.velX *= friction;
+    // Stop completely at low speeds
+    if (Math.abs(player.velX) < 0.1) player.velX = 0;
+  }
+
+  // Clamp velocity to max speed
+  player.velX = Math.max(-maxSpeed, Math.min(maxSpeed, player.velX));
 
   if (game.keys.jump && player.onGround) {
     player.velY = JUMP_VELOCITY;
@@ -234,6 +288,9 @@ function movePlayer(dx, dy) {
   const player = game.player;
   player.x += dx;
 
+  // Apply level bounds (left and right)
+  player.x = Math.max(0, Math.min(player.x, game.levelWidth * TILE_SIZE - player.width));
+
   const collisionsX = getCollidingTiles(player);
   collisionsX.forEach((tile) => {
     if (!isSolidTile(tile.type)) return;
@@ -245,6 +302,10 @@ function movePlayer(dx, dy) {
   });
 
   player.y += dy;
+  
+  // Apply top bound
+  player.y = Math.max(0, player.y);
+  
   player.onGround = false;
 
   const collisionsY = getCollidingTiles(player);
@@ -259,6 +320,20 @@ function movePlayer(dx, dy) {
       player.velY = 0;
     }
   });
+}
+
+function checkGoalCollision() {
+  if (game.levelCompleted) return;
+  
+  const player = game.player;
+  const nearbyTiles = getCollidingTiles(player, true);
+  const hitGoal = nearbyTiles.some((tile) => tile.type === 'goal' && rectsIntersect(player, tile));
+  
+  if (hitGoal) {
+    game.levelCompleted = true;
+    game.timer.finalTime = game.timer.currentTime;
+    showLevelCompleteDialog();
+  }
 }
 
 function updateEnemies() {
@@ -294,20 +369,73 @@ function updateEnemies() {
   });
 }
 
+function updateDeathAnimation() {
+  const player = game.player;
+  
+  player.deathTimer++;
+  
+  if (player.deathTimer <= DEATH_RISE_DURATION) {
+    // Rise up phase
+    player.deathVelY = -8;
+    player.y += player.deathVelY;
+  } else {
+    // Fall down phase
+    player.deathVelY += GRAVITY * 1.5;
+    player.y += player.deathVelY;
+  }
+  
+  // Reset after animation completes
+  if (player.deathTimer >= DEATH_DURATION) {
+    resetPlayer();
+  }
+}
+
 function checkPlayerHazards() {
   const player = game.player;
 
-  const nearbyTiles = getCollidingTiles(player, true);
-  const hitSpike = nearbyTiles.some((tile) => tile.type === 'spike' && rectsIntersect(player, tile));
-  if (hitSpike) {
-    resetPlayer();
+  // Check bottom bound (kills player)
+  const bottomBound = game.levelHeight * TILE_SIZE;
+  if (player.y + player.height > bottomBound) {
+    killPlayer();
     return;
   }
 
-  const hitEnemy = game.enemies.some((enemy) => rectsIntersect(player, enemy));
-  if (hitEnemy) {
-    resetPlayer();
+  // Check spike collisions
+  const nearbyTiles = getCollidingTiles(player, true);
+  const hitSpike = nearbyTiles.some((tile) => tile.type === 'spike' && rectsIntersect(player, tile));
+  if (hitSpike) {
+    killPlayer();
+    return;
   }
+
+  // Check enemy collisions with stomping
+  for (let i = game.enemies.length - 1; i >= 0; i--) {
+    const enemy = game.enemies[i];
+    if (!rectsIntersect(player, enemy)) continue;
+    
+    // Check if player is stomping (coming from above)
+    const isStomping = player.velY > 0 && 
+                       player.y + player.height - STOMP_THRESHOLD < enemy.y + enemy.height / 2;
+    
+    if (isStomping) {
+      // Kill enemy and bounce player
+      game.enemies.splice(i, 1);
+      player.velY = JUMP_VELOCITY * STOMP_BOUNCE; // Bounce based on constant
+      player.onGround = false;
+    } else {
+      // Hit enemy from side - die
+      killPlayer();
+      return;
+    }
+  }
+}
+
+function killPlayer() {
+  game.player.dead = true;
+  game.player.deathTimer = 0;
+  game.player.deathVelY = 0;
+  game.player.velX = 0;
+  game.player.velY = 0;
 }
 
 function updateCamera() {
@@ -328,6 +456,7 @@ function render() {
   renderTiles();
   renderEnemies();
   renderPlayer();
+  renderTimer();
   // Grid removed
 }
 
@@ -368,8 +497,19 @@ function renderPlayer() {
   const ctx = game.ctx;
   const screenX = game.player.x - game.camera.x;
   const screenY = game.player.y - game.camera.y;
-  ctx.fillStyle = '#212121';
-  ctx.fillRect(screenX, screenY, game.player.width, game.player.height);
+  
+  if (game.player.dead) {
+    // Draw death animation - rotate player
+    ctx.save();
+    ctx.translate(screenX + game.player.width / 2, screenY + game.player.height / 2);
+    ctx.rotate((game.player.deathTimer / DEATH_DURATION) * Math.PI * DEATH_SPIN_SPEED); // Spin during death
+    ctx.fillStyle = '#212121';
+    ctx.fillRect(-game.player.width / 2, -game.player.height / 2, game.player.width, game.player.height);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#212121';
+    ctx.fillRect(screenX, screenY, game.player.width, game.player.height);
+  }
 }
 
 function getCollidingTiles(entity, includeHazards = false) {
@@ -422,6 +562,89 @@ function showError(message) {
   ctx.fillStyle = '#ff6b6b';
   ctx.font = '16px Roboto, sans-serif';
   ctx.fillText(message, 16, 32);
+}
+
+function renderTimer() {
+  if (!game.timer.started && !game.levelCompleted) return;
+  
+  const ctx = game.ctx;
+  const time = game.levelCompleted ? game.timer.finalTime : game.timer.currentTime;
+  const seconds = Math.floor(time / 1000);
+  const ms = Math.floor((time % 1000) / 10);
+  const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
+  
+  ctx.save();
+  ctx.font = 'bold 24px Roboto, sans-serif';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+  ctx.fillText(timeString, 12, 32);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(timeString, 10, 30);
+  ctx.restore();
+}
+
+function showLevelCompleteDialog() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const fromEditor = urlParams.get('from') === 'editor';
+  const levelId = urlParams.get('id');
+  
+  if (fromEditor) {
+    // Return to editor after short delay
+    setTimeout(() => {
+      const target = levelId ? `editor.html?id=${levelId}` : 'editor.html';
+      window.location.href = target;
+    }, 1500);
+  } else {
+    // Show completion dialog for played levels
+    const seconds = Math.floor(game.timer.finalTime / 1000);
+    const ms = Math.floor((game.timer.finalTime % 1000) / 10);
+    const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
+    
+    // Create overlay
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    `;
+    
+    const dialog = document.createElement('div');
+    dialog.style.cssText = `
+      background: white;
+      padding: 32px;
+      border-radius: 8px;
+      text-align: center;
+      max-width: 400px;
+    `;
+    
+    dialog.innerHTML = `
+      <h2 style="margin: 0 0 16px 0; font-size: 32px; color: #51cf66;">Level Complete!</h2>
+      <p style="font-size: 24px; margin: 16px 0; color: #212121;">Time: ${timeString}s</p>
+      <button id="closeDialog" style="
+        background: #51cf66;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Close</button>
+    `;
+    
+    overlay.appendChild(dialog);
+    document.body.appendChild(overlay);
+    
+    document.getElementById('closeDialog').addEventListener('click', () => {
+      document.body.removeChild(overlay);
+    });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', initGame);
