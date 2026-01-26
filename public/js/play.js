@@ -1,6 +1,7 @@
 const TILE_SIZE = 32;
 const GRAVITY = 0.8;
 const JUMP_VELOCITY = -12;
+const JUMP_VELOCITY_SPEED_BOOST = -2; // Additional jump power at max speed
 const WALK_SPEED = 5;
 const RUN_SPEED = 8;
 const MAX_FALL_SPEED = 16;
@@ -12,6 +13,19 @@ const STOMP_BOUNCE = 0.5; // multiplier for bounce height when stomping
 const DEATH_DURATION = 90; // frames (~1.5 seconds at 60fps)
 const DEATH_RISE_DURATION = 30; // frames for rise phase
 const DEATH_SPIN_SPEED = 4; // rotation multiplier
+
+// Jump mechanics constants
+const JUMP_RELEASE_MULTIPLIER = 0.5; // Multiplier for early jump release
+const MIN_JUMP_VELOCITY = -4; // Minimum velocity when releasing jump early
+
+// Coyote time constants (in frames)
+const COYOTE_TIME = 6; // Grace period for jumping after leaving ground
+const WALL_COYOTE_TIME = 6; // Grace period for wall jumping after leaving wall
+
+// Wall jump constants
+const WALL_JUMP_VELOCITY_X = 7; // Horizontal boost when wall jumping
+const WALL_JUMP_VELOCITY_Y = -11; // Vertical velocity for wall jump
+const WALL_SLIDE_SPEED = 2; // Max fall speed when sliding on wall
 
 const game = {
   canvas: null,
@@ -31,6 +45,12 @@ const game = {
     velX: 0,
     velY: 0,
     onGround: false,
+    onWall: 0, // -1 for left wall, 1 for right wall, 0 for no wall
+    coyoteTimer: 0, // Frames since leaving ground
+    wallCoyoteTimer: 0, // Frames since leaving wall
+    wallJumpedLeft: false, // Has jumped from left wall
+    wallJumpedRight: false, // Has jumped from right wall
+    jumpPressed: false, // Track if jump button was just pressed
     dead: false,
     deathTimer: 0,
     deathVelY: 0
@@ -193,6 +213,12 @@ function resetPlayer() {
   game.player.velX = 0;
   game.player.velY = 0;
   game.player.onGround = false;
+  game.player.onWall = 0;
+  game.player.coyoteTimer = 0;
+  game.player.wallCoyoteTimer = 0;
+  game.player.wallJumpedLeft = false;
+  game.player.wallJumpedRight = false;
+  game.player.jumpPressed = false;
   game.player.dead = false;
   game.player.deathTimer = 0;
   game.player.deathVelY = 0;
@@ -257,7 +283,25 @@ function updatePlayer() {
     game.timer.startTime = performance.now();
   }
 
-  // Apply acceleration
+  // Track previous jump state for edge detection
+  const wasJumpPressed = player.jumpPressed;
+  player.jumpPressed = game.keys.jump;
+  const jumpJustPressed = player.jumpPressed && !wasJumpPressed;
+
+  // Update coyote timers
+  if (!player.onGround) {
+    player.coyoteTimer++;
+  } else {
+    player.coyoteTimer = 0;
+  }
+
+  if (player.onWall === 0) {
+    player.wallCoyoteTimer++;
+  } else {
+    player.wallCoyoteTimer = 0;
+  }
+
+  // Apply horizontal acceleration
   if (game.keys.left) {
     player.velX -= ACCELERATION;
   } else if (game.keys.right) {
@@ -273,12 +317,58 @@ function updatePlayer() {
   // Clamp velocity to max speed
   player.velX = Math.max(-maxSpeed, Math.min(maxSpeed, player.velX));
 
-  if (game.keys.jump && player.onGround) {
-    player.velY = JUMP_VELOCITY;
-    player.onGround = false;
+  // Variable jump height - release jump early to jump lower
+  if (!game.keys.jump && player.velY < 0) {
+    player.velY = Math.max(player.velY * JUMP_RELEASE_MULTIPLIER, MIN_JUMP_VELOCITY);
   }
 
-  player.velY = Math.min(player.velY + GRAVITY, MAX_FALL_SPEED);
+  // Ground jump with coyote time
+  const canGroundJump = player.onGround || player.coyoteTimer < COYOTE_TIME;
+  if (jumpJustPressed && canGroundJump && player.onWall === 0) {
+    // Calculate jump velocity based on horizontal speed
+    const speedRatio = Math.abs(player.velX) / maxSpeed;
+    const jumpBoost = JUMP_VELOCITY_SPEED_BOOST * speedRatio;
+    player.velY = JUMP_VELOCITY + jumpBoost;
+    player.onGround = false;
+    player.coyoteTimer = COYOTE_TIME; // Prevent double jump
+    
+    // Reset wall jump flags when jumping from ground
+    player.wallJumpedLeft = false;
+    player.wallJumpedRight = false;
+  }
+
+  // Wall jump mechanic
+  const canWallJump = player.wallCoyoteTimer < WALL_COYOTE_TIME;
+  if (jumpJustPressed && !canGroundJump && canWallJump && player.onWall !== 0) {
+    // Check if we can wall jump from this side
+    const onLeftWall = player.onWall === -1;
+    const onRightWall = player.onWall === 1;
+    
+    if ((onLeftWall && !player.wallJumpedLeft) || (onRightWall && !player.wallJumpedRight)) {
+      // Perform wall jump
+      player.velY = WALL_JUMP_VELOCITY_Y;
+      player.velX = player.onWall === -1 ? WALL_JUMP_VELOCITY_X : -WALL_JUMP_VELOCITY_X;
+      
+      // Mark this side as used
+      if (onLeftWall) {
+        player.wallJumpedLeft = true;
+        player.wallJumpedRight = false; // Reset opposite side
+      } else {
+        player.wallJumpedRight = true;
+        player.wallJumpedLeft = false; // Reset opposite side
+      }
+      
+      player.wallCoyoteTimer = WALL_COYOTE_TIME; // Prevent immediate re-wall jump
+    }
+  }
+
+  // Apply gravity with wall slide
+  if (player.onWall !== 0 && player.velY > 0 && !player.onGround) {
+    // Wall sliding - slower fall speed
+    player.velY = Math.min(player.velY + GRAVITY, WALL_SLIDE_SPEED);
+  } else {
+    player.velY = Math.min(player.velY + GRAVITY, MAX_FALL_SPEED);
+  }
 
   movePlayer(player.velX, 0);
   movePlayer(0, player.velY);
@@ -291,13 +381,17 @@ function movePlayer(dx, dy) {
   // Apply level bounds (left and right)
   player.x = Math.max(0, Math.min(player.x, game.levelWidth * TILE_SIZE - player.width));
 
+  player.onWall = 0; // Reset wall state
+  
   const collisionsX = getCollidingTiles(player);
   collisionsX.forEach((tile) => {
     if (!isSolidTile(tile.type)) return;
     if (dx > 0) {
       player.x = tile.x - player.width;
+      player.onWall = 1; // Right wall
     } else if (dx < 0) {
       player.x = tile.x + TILE_SIZE;
+      player.onWall = -1; // Left wall
     }
   });
 
