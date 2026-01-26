@@ -1,6 +1,7 @@
 // Profile Page Logic
 
 let currentTab = 'published';
+let deleteConfirmResolver = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Check if user is logged in (handled by navigation.js mostly, but good to ensure)
@@ -9,6 +10,8 @@ document.addEventListener('DOMContentLoaded', () => {
         updateProfileDisplay(user);
         loadTabContent('published');
     }
+
+  setupDeleteConfirmModal();
 });
 
 function updateProfileDisplay(user) {
@@ -110,6 +113,30 @@ function displayLevels(levels) {
   `).join('');
 }
 
+// Delete a level (published or draft)
+async function deleteLevel(e, id) {
+  e.stopPropagation(); // Prevent card click
+  
+  const confirmed = await showDeleteConfirm('Are you sure you want to delete this level? This cannot be undone.');
+  if (confirmed) {
+    try {
+      const response = await fetch(`/api/levels/${id}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        // Refresh current tab
+        loadTabContent(currentTab);
+      } else {
+        alert('Failed to delete level');
+      }
+    } catch (err) {
+      console.error('Error deleting level:', err);
+      alert('Error deleting level');
+    }
+  }
+}
+
 function displayDrafts(drafts) {
   const container = document.getElementById('cardsContainer');
   
@@ -132,22 +159,88 @@ function displayDrafts(drafts) {
     });
     
     return `
-      <div class="card" onclick="window.location.href='editor.html?id=${draft.id}'">
-        <div class="card-image">
-          <div class="placeholder-image draft-placeholder">
-            <svg class="icon" style="width: 48px; height: 48px; opacity: 0.3;"><use href="icons.svg#icon-edit"/></svg>
-          </div>
+      <div class="level-card">
+        <span class="draft-badge draft-badge-overlay">Draft</span>
+        <button class="delete-btn level-card-delete-overlay" onclick="deleteLevel(event, ${draft.id})" title="Delete Draft">
+          <svg class="icon"><use href="icons.svg#icon-delete"/></svg>
+        </button>
+        <div class="level-card-image draft-placeholder">
+          <svg class="icon" style="width: 48px; height: 48px; opacity: 0.3;"><use href="icons.svg#icon-edit"/></svg>
         </div>
-        <div class="card-content">
-          <h3 class="card-title">${escapeHtml(draft.title || 'Untitled Draft')}</h3>
-          <p class="card-description">Last edited: ${formattedDate}</p>
-          <div class="card-stats">
-            <span class="draft-badge">Draft</span>
+        <div class="level-card-content">
+          <div class="draft-card-row">
+            <div class="draft-card-info">
+              <div class="level-card-title-row">
+                <h3 class="level-card-title">${escapeHtml(draft.title || 'Untitled Draft')}</h3>
+              </div>
+              <p class="level-card-description">Last edited: ${formattedDate}</p>
+            </div>
+            <div class="level-card-footer draft-card-footer">
+              <button class="draft-edit-btn" onclick="editDraft(event, ${draft.id})">Edit</button>
+              <button class="draft-publish-btn" onclick="publishDraft(event, ${draft.id})">Publish</button>
+            </div>
           </div>
         </div>
       </div>
     `;
   }).join('');
+}
+
+function publishDraft(e, id) {
+  e.stopPropagation();
+  window.location.href = `editor.html?id=${id}`;
+}
+
+function editDraft(e, id) {
+  e.stopPropagation();
+  window.location.href = `editor.html?id=${id}`;
+}
+
+function setupDeleteConfirmModal() {
+  const modal = document.getElementById('deleteConfirmModal');
+  if (!modal) return;
+
+  const confirmBtn = document.getElementById('deleteConfirmBtn');
+  const cancelBtn = document.getElementById('deleteCancelBtn');
+  const closeBtn = document.getElementById('deleteCloseBtn');
+
+  const closeModal = (result) => {
+    modal.classList.remove('show');
+    if (deleteConfirmResolver) {
+      deleteConfirmResolver(result);
+      deleteConfirmResolver = null;
+    }
+  };
+
+  confirmBtn.addEventListener('click', () => closeModal(true));
+  cancelBtn.addEventListener('click', () => closeModal(false));
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => closeModal(false));
+  }
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      closeModal(false);
+    }
+  });
+}
+
+function showDeleteConfirm(message) {
+  const modal = document.getElementById('deleteConfirmModal');
+  const messageEl = document.getElementById('deleteConfirmMessage');
+  if (!modal || !messageEl) {
+    return Promise.resolve(confirm(message));
+  }
+
+  if (deleteConfirmResolver) {
+    deleteConfirmResolver(false);
+  }
+
+  messageEl.textContent = message;
+  modal.classList.add('show');
+
+  return new Promise((resolve) => {
+    deleteConfirmResolver = resolve;
+  });
 }
 
 function escapeHtml(text) {

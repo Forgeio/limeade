@@ -1,7 +1,25 @@
 // Common navigation functions
 
 // Check authentication on page load
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
+  // Sync session with backend
+  try {
+    const res = await fetch('/auth/user');
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem('user', JSON.stringify({
+        name: data.username,
+        avatar: data.avatar_url,
+        provider: data.oauth_provider,
+        id: data.id
+      }));
+    } else if (res.status === 401) {
+      localStorage.removeItem('user');
+    }
+  } catch (e) {
+    console.log('Session sync failed, using local storage');
+  }
+
   const user = checkAuth();
   
   const pathname = window.location.pathname;

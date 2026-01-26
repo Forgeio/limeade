@@ -1,34 +1,15 @@
-// Authentication placeholder functions
-// These will be connected to OAuth backend in Phase 3
+// Authentication functions connected to backend OAuth
 
 function loginWithGoogle() {
-  // TODO: Implement Google OAuth
-  console.log('Google OAuth login initiated');
-  
-  // For now, simulate successful login
-  localStorage.setItem('user', JSON.stringify({
-    name: 'Guest User',
-    provider: 'google',
-    avatar: null
-  }));
-  
-  // Redirect to discover page
-  window.location.href = 'discover.html';
+  window.location.href = '/auth/google';
 }
 
 function loginWithDiscord() {
-  // TODO: Implement Discord OAuth
-  console.log('Discord OAuth login initiated');
-  
-  // For now, simulate successful login
-  localStorage.setItem('user', JSON.stringify({
-    name: 'Guest User',
-    provider: 'discord',
-    avatar: null
-  }));
-  
-  // Redirect to discover page
-  window.location.href = 'discover.html';
+  window.location.href = '/auth/discord';
+}
+
+function loginWithGitHub() {
+  window.location.href = '/auth/github';
 }
 
 // Check if user is already logged in
