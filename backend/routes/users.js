@@ -89,8 +89,13 @@ router.get('/:id/drafts', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if requesting user is the owner (if authenticated)
-    if (req.isAuthenticated() && req.user.id !== parseInt(id)) {
+    // Require authentication
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check if requesting user is the owner
+    if (req.user.id !== parseInt(id)) {
       return res.status(403).json({ error: 'You can only view your own drafts' });
     }
 

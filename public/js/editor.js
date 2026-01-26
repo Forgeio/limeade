@@ -2,6 +2,7 @@
 
 // Constants
 const CAMERA_MOVE_SPEED = 8;
+const MAX_DRAFTS_PER_USER = 8; // Must match backend constant
 
 // Editor state
 const editor = {
@@ -414,7 +415,7 @@ async function createNewDraft() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        title: '', // Will get default name from backend
+        title: '', // Empty title triggers auto-generation of "New Level X" pattern in backend
         description: '',
         level_data: {
           width: editor.gridWidth,
@@ -451,8 +452,8 @@ async function createNewDraft() {
       }
     } else {
       const error = await response.json();
-      if (error.error === 'Maximum draft limit reached (8 drafts)') {
-        alert('You have reached the maximum limit of 8 drafts. Please delete or publish some drafts before creating new ones.');
+      if (error.error && error.error.includes('Maximum draft limit')) {
+        alert(`You have reached the maximum limit of ${MAX_DRAFTS_PER_USER} drafts. Please delete or publish some drafts before creating new ones.`);
       } else {
         // If backend auth fails, use local storage for demo
         console.log('Using local storage for draft');

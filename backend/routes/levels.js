@@ -2,6 +2,9 @@ const express = require('express');
 const db = require('../config/database');
 const router = express.Router();
 
+// Constants
+const MAX_DRAFTS_PER_USER = 8;
+
 // Get levels (discover page)
 router.get('/', async (req, res) => {
   try {
@@ -99,15 +102,15 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Level data is required' });
     }
 
-    // Check draft limit (max 8 drafts)
+    // Check draft limit (max drafts per user)
     const draftCountResult = await db.query(
       'SELECT COUNT(*) FROM levels WHERE creator_id = $1 AND published = false',
       [req.user.id]
     );
 
     const draftCount = parseInt(draftCountResult.rows[0].count);
-    if (draftCount >= 8) {
-      return res.status(400).json({ error: 'Maximum draft limit reached (8 drafts)' });
+    if (draftCount >= MAX_DRAFTS_PER_USER) {
+      return res.status(400).json({ error: `Maximum draft limit reached (${MAX_DRAFTS_PER_USER} drafts)` });
     }
 
     // Generate default title if not provided
@@ -126,12 +129,9 @@ router.post('/', async (req, res) => {
         })
         .filter(n => n > 0);
       
-      let nextNumber = 1;
-      while (existingNumbers.includes(nextNumber)) {
-        nextNumber++;
-      }
-      
-      levelTitle = `New Level ${nextNumber}`;
+      // Use O(n) algorithm to find next number
+      const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+      levelTitle = `New Level ${maxNumber + 1}`;
     }
 
     const result = await db.query(
