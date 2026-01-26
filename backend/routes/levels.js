@@ -2,6 +2,9 @@ const express = require('express');
 const db = require('../config/database');
 const router = express.Router();
 
+// Constants
+const MAX_DRAFTS_PER_USER = 8;
+
 // Get levels (discover page)
 router.get('/', async (req, res) => {
   try {
@@ -95,15 +98,47 @@ router.post('/', async (req, res) => {
 
     const { title, description, level_data } = req.body;
 
-    if (!title || !level_data) {
-      return res.status(400).json({ error: 'Title and level data are required' });
+    if (!level_data) {
+      return res.status(400).json({ error: 'Level data is required' });
+    }
+
+    // Check draft limit (max drafts per user)
+    const draftCountResult = await db.query(
+      'SELECT COUNT(*) FROM levels WHERE creator_id = $1 AND published = false',
+      [req.user.id]
+    );
+
+    const draftCount = parseInt(draftCountResult.rows[0].count);
+    if (draftCount >= MAX_DRAFTS_PER_USER) {
+      return res.status(400).json({ error: `Maximum draft limit reached (${MAX_DRAFTS_PER_USER} drafts)` });
+    }
+
+    // Generate default title if not provided
+    let levelTitle = title;
+    if (!levelTitle || levelTitle === 'Untitled Level') {
+      // Find the next available "New Level X" number
+      const existingResult = await db.query(
+        `SELECT title FROM levels WHERE creator_id = $1 AND title LIKE 'New Level %'`,
+        [req.user.id]
+      );
+      
+      const existingNumbers = existingResult.rows
+        .map(row => {
+          const match = row.title.match(/^New Level (\d+)$/);
+          return match ? parseInt(match[1]) : 0;
+        })
+        .filter(n => n > 0);
+      
+      // Use O(n) algorithm to find next number (using reduce instead of spread to avoid stack overflow)
+      const maxNumber = existingNumbers.reduce((max, num) => Math.max(max, num), 0);
+      levelTitle = `New Level ${maxNumber + 1}`;
     }
 
     const result = await db.query(
       `INSERT INTO levels (title, description, creator_id, level_data, published, created_at, updated_at)
        VALUES ($1, $2, $3, $4, false, NOW(), NOW())
        RETURNING *`,
-      [title, description, req.user.id, JSON.stringify(level_data)]
+      [levelTitle, description || '', req.user.id, JSON.stringify(level_data)]
     );
 
     res.status(201).json(result.rows[0]);

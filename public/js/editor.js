@@ -2,10 +2,12 @@
 
 // Constants
 const CAMERA_MOVE_SPEED = 8;
+const MAX_DRAFTS_PER_USER = 8; // Must match backend constant
 
 // Editor state
 const editor = {
   levelId: null,
+  levelTitle: '',
   canvas: null,
   ctx: null,
   gridWidth: 50,
@@ -20,6 +22,7 @@ const editor = {
   isDragging: false,
   lastSaveTime: Date.now(),
   autoSaveInterval: 5000, // Auto-save every 5 seconds
+  drafts: [], // Store user's drafts
   keys: {
     w: false,
     a: false,
@@ -56,6 +59,19 @@ function initEditor() {
   // Setup tile selector
   setupTileSelector();
   
+  // Setup level name input
+  const levelNameInput = document.getElementById('levelName');
+  if (levelNameInput) {
+    levelNameInput.addEventListener('change', handleLevelNameChange);
+    levelNameInput.addEventListener('blur', handleLevelNameChange);
+  }
+  
+  // Setup draft selector
+  const draftSelector = document.getElementById('draftSelector');
+  if (draftSelector) {
+    draftSelector.addEventListener('change', handleDraftChange);
+  }
+  
   // Setup mouse events
   editor.canvas.addEventListener('mousedown', handleMouseDown);
   editor.canvas.addEventListener('mousemove', handleMouseMove);
@@ -71,15 +87,18 @@ function initEditor() {
   document.getElementById('testBtn').addEventListener('click', testLevel);
   document.getElementById('publishBtn').addEventListener('click', publishLevel);
   
-  // Create a new draft or load existing one
-  const urlParams = new URLSearchParams(window.location.search);
-  const levelId = urlParams.get('id');
-  
-  if (levelId) {
-    loadLevel(levelId);
-  } else {
-    createNewDraft();
-  }
+  // Load user's drafts first
+  loadUserDrafts().then(() => {
+    // Create a new draft or load existing one
+    const urlParams = new URLSearchParams(window.location.search);
+    const levelId = urlParams.get('id');
+    
+    if (levelId) {
+      loadLevel(levelId);
+    } else {
+      createNewDraft();
+    }
+  });
   
   // Start auto-save and render loops
   setInterval(autoSave, editor.autoSaveInterval);
@@ -396,7 +415,7 @@ async function createNewDraft() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        title: 'Untitled Level',
+        title: '', // Empty title or "Untitled Level" triggers auto-generation of "New Level X" in backend
         description: '',
         level_data: {
           width: editor.gridWidth,
@@ -409,22 +428,154 @@ async function createNewDraft() {
     if (response.ok) {
       const level = await response.json();
       editor.levelId = level.id;
+      editor.levelTitle = level.title;
+      
+      // Update level name input
+      const levelNameInput = document.getElementById('levelName');
+      if (levelNameInput) {
+        levelNameInput.value = level.title;
+      }
+      
       updateStatus('Draft created');
       
       // Update URL without reloading
       const newUrl = `${window.location.pathname}?id=${level.id}`;
       window.history.replaceState({}, '', newUrl);
+      
+      // Reload drafts to include the new one
+      await loadUserDrafts();
+      
+      // Select the new draft in the dropdown
+      const draftSelector = document.getElementById('draftSelector');
+      if (draftSelector) {
+        draftSelector.value = level.id;
+      }
     } else {
-      // If backend auth fails, use local storage for demo
-      console.log('Using local storage for draft');
-      editor.levelId = 'local-' + Date.now();
-      updateStatus('Ready (local mode)');
+      const error = await response.json();
+      if (error.error && error.error.includes('Maximum draft limit')) {
+        alert(`You have reached the maximum limit of ${MAX_DRAFTS_PER_USER} drafts. Please delete or publish some drafts before creating new ones.`);
+      } else {
+        // If backend auth fails, use local storage for demo
+        console.log('Using local storage for draft');
+        editor.levelId = 'local-' + Date.now();
+        editor.levelTitle = 'New Level (local)';
+        updateStatus('Ready (local mode)');
+      }
     }
   } catch (err) {
     console.error('Error creating draft:', err);
     // Fall back to local storage
     editor.levelId = 'local-' + Date.now();
+    editor.levelTitle = 'New Level (local)';
     updateStatus('Ready (local mode)');
+  }
+}
+
+// Load user's drafts
+async function loadUserDrafts() {
+  try {
+    const user = typeof checkAuth === 'function' ? checkAuth() : null;
+    if (!user) {
+      return;
+    }
+    
+    const response = await fetch(`/api/users/${user.id}/drafts`);
+    
+    if (response.ok) {
+      const data = await response.json();
+      editor.drafts = data.drafts || [];
+      
+      // Update draft selector dropdown
+      updateDraftSelector();
+    }
+  } catch (err) {
+    console.error('Error loading drafts:', err);
+    editor.drafts = [];
+  }
+}
+
+// Update the draft selector dropdown
+function updateDraftSelector() {
+  const draftSelector = document.getElementById('draftSelector');
+  if (!draftSelector) return;
+  
+  // Clear existing options
+  draftSelector.innerHTML = '';
+  
+  // Add "Create New" option
+  const createNewOption = document.createElement('option');
+  createNewOption.value = 'new';
+  createNewOption.textContent = '+ Create New Draft';
+  draftSelector.appendChild(createNewOption);
+  
+  // Add separator
+  if (editor.drafts.length > 0) {
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '──────────';
+    draftSelector.appendChild(separator);
+  }
+  
+  // Add drafts
+  editor.drafts.forEach(draft => {
+    const option = document.createElement('option');
+    option.value = draft.id;
+    option.textContent = draft.title || 'Untitled';
+    draftSelector.appendChild(option);
+  });
+  
+  // Select current draft if any
+  if (editor.levelId) {
+    draftSelector.value = editor.levelId;
+  }
+}
+
+// Handle draft selector change
+async function handleDraftChange(e) {
+  const selectedValue = e.target.value;
+  
+  if (selectedValue === 'new') {
+    // Create a new draft
+    await createNewDraft();
+  } else if (selectedValue) {
+    // Load the selected draft
+    await loadLevel(selectedValue);
+    
+    // Update URL
+    const newUrl = `${window.location.pathname}?id=${selectedValue}`;
+    window.history.replaceState({}, '', newUrl);
+  }
+}
+
+// Handle level name change
+async function handleLevelNameChange(e) {
+  const newTitle = e.target.value.trim();
+  
+  if (newTitle && newTitle !== editor.levelTitle) {
+    editor.levelTitle = newTitle;
+    
+    // Save the title immediately
+    if (editor.levelId && !editor.levelId.startsWith('local-')) {
+      try {
+        await fetch(`/api/levels/${editor.levelId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            title: newTitle
+          })
+        });
+        
+        updateStatus('Title saved');
+        setTimeout(() => updateStatus('Ready'), 2000);
+        
+        // Reload drafts to update the dropdown
+        await loadUserDrafts();
+      } catch (err) {
+        console.error('Error saving title:', err);
+      }
+    }
   }
 }
 
@@ -436,6 +587,13 @@ async function loadLevel(levelId) {
     if (response.ok) {
       const level = await response.json();
       editor.levelId = level.id;
+      editor.levelTitle = level.title || '';
+      
+      // Update level name input
+      const levelNameInput = document.getElementById('levelName');
+      if (levelNameInput) {
+        levelNameInput.value = editor.levelTitle;
+      }
       
       if (level.level_data) {
         editor.gridWidth = level.level_data.width || 50;
@@ -530,22 +688,62 @@ function applyResize() {
   const height = parseInt(document.getElementById('levelHeight').value);
   
   if (width >= 10 && width <= 200 && height >= 10 && height <= 100) {
+    const oldWidth = editor.gridWidth;
+    const oldHeight = editor.gridHeight;
+    
     editor.gridWidth = width;
     editor.gridHeight = height;
     
-    // Remove tiles outside new bounds
-    Object.keys(editor.levelData).forEach(key => {
-      const [x, y] = key.split(',').map(Number);
-      if (x >= width || y >= height) {
-        const tileType = editor.levelData[key];
-        if (tileType === 'spawn') {
-          editor.spawnPosition = null;
-        } else if (tileType === 'goal') {
-          editor.goalPosition = null;
+    // Resize from bottom-left corner
+    // This means we need to shift tiles vertically when height changes
+    const heightDiff = height - oldHeight;
+    
+    if (heightDiff !== 0) {
+      // Create a new levelData object with shifted positions
+      const newLevelData = {};
+      
+      Object.keys(editor.levelData).forEach(key => {
+        const [x, y] = key.split(',').map(Number);
+        const newY = y + heightDiff;
+        
+        // Only keep tiles that are still within bounds
+        if (x < width && newY >= 0 && newY < height) {
+          const newKey = `${x},${newY}`;
+          newLevelData[newKey] = editor.levelData[key];
+          
+          // Update spawn and goal positions
+          if (editor.levelData[key] === 'spawn') {
+            editor.spawnPosition = newKey;
+          } else if (editor.levelData[key] === 'goal') {
+            editor.goalPosition = newKey;
+          }
+        } else {
+          // Tile is out of bounds, remove it
+          const tileType = editor.levelData[key];
+          if (tileType === 'spawn') {
+            editor.spawnPosition = null;
+          } else if (tileType === 'goal') {
+            editor.goalPosition = null;
+          }
         }
-        delete editor.levelData[key];
-      }
-    });
+      });
+      
+      editor.levelData = newLevelData;
+    } else {
+      // Only width changed, just remove tiles outside new width bounds
+      Object.keys(editor.levelData).forEach(key => {
+        const [x, y] = key.split(',').map(Number);
+        if (x >= width || y >= height) {
+          const tileType = editor.levelData[key];
+          if (tileType === 'spawn') {
+            editor.spawnPosition = null;
+          } else if (tileType === 'goal') {
+            editor.goalPosition = null;
+          }
+          delete editor.levelData[key];
+        }
+      });
+    }
     
     render();
     closeResizeModal();

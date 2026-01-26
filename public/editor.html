@@ -55,6 +55,16 @@
   <!-- Editor Toolbar -->
   <div class="editor-toolbar">
     <div class="toolbar-left">
+      <div class="draft-selector-container">
+        <label for="draftSelector" class="draft-label">Draft:</label>
+        <select id="draftSelector" class="draft-selector">
+          <option value="">Loading...</option>
+        </select>
+      </div>
+      <div class="level-name-container">
+        <label for="levelName" class="level-name-label">Name:</label>
+        <input type="text" id="levelName" class="level-name-input" placeholder="Level Name" maxlength="100">
+      </div>
       <div class="tile-selector">
         <button class="tile-btn" data-tile="ground" title="Ground">
           <div class="tile-placeholder ground"></div>

@@ -84,6 +84,39 @@ router.get('/:id/levels', async (req, res) => {
   }
 });
 
+// Get user's draft levels
+router.get('/:id/drafts', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Require authentication
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // Check if requesting user is the owner
+    if (req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'You can only view your own drafts' });
+    }
+
+    const result = await db.query(
+      `SELECT id, title, description, level_data, created_at, updated_at
+       FROM levels
+       WHERE creator_id = $1 AND published = false
+       ORDER BY updated_at DESC
+       LIMIT 8`,
+      [id]
+    );
+
+    res.json({
+      drafts: result.rows
+    });
+  } catch (err) {
+    console.error('Error fetching user drafts:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Get leaderboard
 router.get('/leaderboard/:type', async (req, res) => {
   try {
