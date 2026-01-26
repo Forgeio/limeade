@@ -451,6 +451,11 @@ function render() {
   ctx.fillStyle = '#87ceeb';
   ctx.fillRect(0, 0, game.width, game.height);
 
+  // Increment animation frame for future sprite animations
+  if (typeof animationFrame !== 'undefined') {
+    animationFrame++;
+  }
+
   renderTiles();
   renderEnemies();
   renderPlayer();
