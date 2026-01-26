@@ -327,7 +327,7 @@ function updatePlayer() {
 
   // Ground jump with coyote time
   const canGroundJump = player.onGround || player.coyoteTimer < COYOTE_TIME;
-  if (jumpJustPressed && canGroundJump && prevOnWall === 0) {
+  if (jumpJustPressed && canGroundJump) {
     // Calculate jump velocity based on horizontal speed
     const speedRatio = Math.abs(player.velX) / maxSpeed;
     const jumpBoost = JUMP_VELOCITY_SPEED_BOOST * speedRatio;
@@ -340,7 +340,7 @@ function updatePlayer() {
     player.wallJumpedRight = false;
   }
 
-  // Wall jump mechanic
+  // Wall jump mechanic (only if not ground jumping)
   const canWallJump = player.wallCoyoteTimer < WALL_COYOTE_TIME;
   if (jumpJustPressed && !canGroundJump && canWallJump && prevOnWall !== 0) {
     // Check if we can wall jump from this side
@@ -380,50 +380,58 @@ function updatePlayer() {
 function movePlayer(dx, dy) {
   const player = game.player;
   
-  // Handle horizontal movement and wall detection
-  if (dx !== 0) {
-    player.x += dx;
+  // Handle horizontal movement
+  player.x += dx;
 
-    // Apply level bounds (left and right)
-    player.x = Math.max(0, Math.min(player.x, game.levelWidth * TILE_SIZE - player.width));
+  // Apply level bounds (left and right)
+  player.x = Math.max(0, Math.min(player.x, game.levelWidth * TILE_SIZE - player.width));
 
-    player.onWall = 0; // Reset wall state
-    
-    const collisionsX = getCollidingTiles(player);
-    collisionsX.forEach((tile) => {
-      if (!isSolidTile(tile.type)) return;
-      if (dx > 0) {
-        player.x = tile.x - player.width;
-        player.onWall = 1; // Right wall
-      } else if (dx < 0) {
-        player.x = tile.x + TILE_SIZE;
-        player.onWall = -1; // Left wall
+  // Check for horizontal collisions and wall contact
+  player.onWall = 0;
+  const collisionsX = getCollidingTiles(player);
+  collisionsX.forEach((tile) => {
+    if (!isSolidTile(tile.type)) return;
+    if (dx > 0) {
+      player.x = tile.x - player.width;
+      player.onWall = 1; // Right wall
+    } else if (dx < 0) {
+      player.x = tile.x + TILE_SIZE;
+      player.onWall = -1; // Left wall
+    } else {
+      // No horizontal movement, but check if touching walls
+      const playerRight = player.x + player.width;
+      const playerLeft = player.x;
+      const tileLeft = tile.x;
+      const tileRight = tile.x + TILE_SIZE;
+      
+      if (Math.abs(playerRight - tileLeft) < 0.5) {
+        player.onWall = 1; // Touching right wall
+      } else if (Math.abs(playerLeft - tileRight) < 0.5) {
+        player.onWall = -1; // Touching left wall
       }
-    });
-  }
+    }
+  });
 
   // Handle vertical movement
-  if (dy !== 0) {
-    player.y += dy;
-    
-    // Apply top bound
-    player.y = Math.max(0, player.y);
-    
-    player.onGround = false;
+  player.y += dy;
+  
+  // Apply top bound
+  player.y = Math.max(0, player.y);
+  
+  player.onGround = false;
 
-    const collisionsY = getCollidingTiles(player);
-    collisionsY.forEach((tile) => {
-      if (!isSolidTile(tile.type)) return;
-      if (dy > 0) {
-        player.y = tile.y - player.height;
-        player.velY = 0;
-        player.onGround = true;
-      } else if (dy < 0) {
-        player.y = tile.y + TILE_SIZE;
-        player.velY = 0;
-      }
-    });
-  }
+  const collisionsY = getCollidingTiles(player);
+  collisionsY.forEach((tile) => {
+    if (!isSolidTile(tile.type)) return;
+    if (dy > 0) {
+      player.y = tile.y - player.height;
+      player.velY = 0;
+      player.onGround = true;
+    } else if (dy < 0) {
+      player.y = tile.y + TILE_SIZE;
+      player.velY = 0;
+    }
+  });
 }
 
 function checkGoalCollision() {
