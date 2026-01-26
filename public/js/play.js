@@ -26,6 +26,7 @@ const WALL_COYOTE_TIME = 6; // Grace period for wall jumping after leaving wall
 const WALL_JUMP_VELOCITY_X = 7; // Horizontal boost when wall jumping
 const WALL_JUMP_VELOCITY_Y = -11; // Vertical velocity for wall jump
 const WALL_SLIDE_SPEED = 2; // Max fall speed when sliding on wall
+const WALL_TOUCH_TOLERANCE = 0.5; // Pixel tolerance for wall touch detection
 
 const game = {
   canvas: null,
@@ -404,9 +405,9 @@ function movePlayer(dx, dy) {
       const tileLeft = tile.x;
       const tileRight = tile.x + TILE_SIZE;
       
-      if (Math.abs(playerRight - tileLeft) < 0.5) {
+      if (Math.abs(playerRight - tileLeft) < WALL_TOUCH_TOLERANCE) {
         player.onWall = 1; // Touching right wall
-      } else if (Math.abs(playerLeft - tileRight) < 0.5) {
+      } else if (Math.abs(playerLeft - tileRight) < WALL_TOUCH_TOLERANCE) {
         player.onWall = -1; // Touching left wall
       }
     }
