@@ -287,6 +287,9 @@ function updatePlayer() {
   const wasJumpPressed = player.jumpPressed;
   player.jumpPressed = game.keys.jump;
   const jumpJustPressed = player.jumpPressed && !wasJumpPressed;
+  
+  // Store previous wall state before movement
+  const prevOnWall = player.onWall;
 
   // Update coyote timers
   if (!player.onGround) {
@@ -295,7 +298,7 @@ function updatePlayer() {
     player.coyoteTimer = 0;
   }
 
-  if (player.onWall === 0) {
+  if (prevOnWall === 0) {
     player.wallCoyoteTimer++;
   } else {
     player.wallCoyoteTimer = 0;
@@ -324,7 +327,7 @@ function updatePlayer() {
 
   // Ground jump with coyote time
   const canGroundJump = player.onGround || player.coyoteTimer < COYOTE_TIME;
-  if (jumpJustPressed && canGroundJump && player.onWall === 0) {
+  if (jumpJustPressed && canGroundJump && prevOnWall === 0) {
     // Calculate jump velocity based on horizontal speed
     const speedRatio = Math.abs(player.velX) / maxSpeed;
     const jumpBoost = JUMP_VELOCITY_SPEED_BOOST * speedRatio;
@@ -339,15 +342,15 @@ function updatePlayer() {
 
   // Wall jump mechanic
   const canWallJump = player.wallCoyoteTimer < WALL_COYOTE_TIME;
-  if (jumpJustPressed && !canGroundJump && canWallJump && player.onWall !== 0) {
+  if (jumpJustPressed && !canGroundJump && canWallJump && prevOnWall !== 0) {
     // Check if we can wall jump from this side
-    const onLeftWall = player.onWall === -1;
-    const onRightWall = player.onWall === 1;
+    const onLeftWall = prevOnWall === -1;
+    const onRightWall = prevOnWall === 1;
     
     if ((onLeftWall && !player.wallJumpedLeft) || (onRightWall && !player.wallJumpedRight)) {
       // Perform wall jump
       player.velY = WALL_JUMP_VELOCITY_Y;
-      player.velX = player.onWall === -1 ? WALL_JUMP_VELOCITY_X : -WALL_JUMP_VELOCITY_X;
+      player.velX = prevOnWall === -1 ? WALL_JUMP_VELOCITY_X : -WALL_JUMP_VELOCITY_X;
       
       // Mark this side as used
       if (onLeftWall) {
@@ -363,7 +366,7 @@ function updatePlayer() {
   }
 
   // Apply gravity with wall slide
-  if (player.onWall !== 0 && player.velY > 0 && !player.onGround) {
+  if (prevOnWall !== 0 && player.velY > 0 && !player.onGround) {
     // Wall sliding - slower fall speed
     player.velY = Math.min(player.velY + GRAVITY, WALL_SLIDE_SPEED);
   } else {
@@ -376,44 +379,51 @@ function updatePlayer() {
 
 function movePlayer(dx, dy) {
   const player = game.player;
-  player.x += dx;
-
-  // Apply level bounds (left and right)
-  player.x = Math.max(0, Math.min(player.x, game.levelWidth * TILE_SIZE - player.width));
-
-  player.onWall = 0; // Reset wall state
   
-  const collisionsX = getCollidingTiles(player);
-  collisionsX.forEach((tile) => {
-    if (!isSolidTile(tile.type)) return;
-    if (dx > 0) {
-      player.x = tile.x - player.width;
-      player.onWall = 1; // Right wall
-    } else if (dx < 0) {
-      player.x = tile.x + TILE_SIZE;
-      player.onWall = -1; // Left wall
-    }
-  });
+  // Handle horizontal movement and wall detection
+  if (dx !== 0) {
+    player.x += dx;
 
-  player.y += dy;
-  
-  // Apply top bound
-  player.y = Math.max(0, player.y);
-  
-  player.onGround = false;
+    // Apply level bounds (left and right)
+    player.x = Math.max(0, Math.min(player.x, game.levelWidth * TILE_SIZE - player.width));
 
-  const collisionsY = getCollidingTiles(player);
-  collisionsY.forEach((tile) => {
-    if (!isSolidTile(tile.type)) return;
-    if (dy > 0) {
-      player.y = tile.y - player.height;
-      player.velY = 0;
-      player.onGround = true;
-    } else if (dy < 0) {
-      player.y = tile.y + TILE_SIZE;
-      player.velY = 0;
-    }
-  });
+    player.onWall = 0; // Reset wall state
+    
+    const collisionsX = getCollidingTiles(player);
+    collisionsX.forEach((tile) => {
+      if (!isSolidTile(tile.type)) return;
+      if (dx > 0) {
+        player.x = tile.x - player.width;
+        player.onWall = 1; // Right wall
+      } else if (dx < 0) {
+        player.x = tile.x + TILE_SIZE;
+        player.onWall = -1; // Left wall
+      }
+    });
+  }
+
+  // Handle vertical movement
+  if (dy !== 0) {
+    player.y += dy;
+    
+    // Apply top bound
+    player.y = Math.max(0, player.y);
+    
+    player.onGround = false;
+
+    const collisionsY = getCollidingTiles(player);
+    collisionsY.forEach((tile) => {
+      if (!isSolidTile(tile.type)) return;
+      if (dy > 0) {
+        player.y = tile.y - player.height;
+        player.velY = 0;
+        player.onGround = true;
+      } else if (dy < 0) {
+        player.y = tile.y + TILE_SIZE;
+        player.velY = 0;
+      }
+    });
+  }
 }
 
 function checkGoalCollision() {
