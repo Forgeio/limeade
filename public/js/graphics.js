@@ -27,7 +27,8 @@ const SPRITESHEET_CONFIG = {
   // Example: ground: { x: 0, y: 0, variants: 4 }
 };
 
-// Current animation frame counter (incremented each render)
+// Global animation frame counter (for future use with sprite animations)
+// Will be incremented by render functions that need it
 let animationFrame = 0;
 
 // Autotiling support (dual-grid method preparation)

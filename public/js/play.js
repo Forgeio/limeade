@@ -7,6 +7,11 @@ const MAX_FALL_SPEED = 16;
 const ACCELERATION = 0.5;
 const FRICTION = 0.85;
 const AIR_FRICTION = 0.95;
+const STOMP_THRESHOLD = 10; // pixels for stomp detection
+const STOMP_BOUNCE = 0.5; // multiplier for bounce height when stomping
+const DEATH_DURATION = 90; // frames (~1.5 seconds at 60fps)
+const DEATH_RISE_DURATION = 30; // frames for rise phase
+const DEATH_SPIN_SPEED = 4; // rotation multiplier
 
 const game = {
   canvas: null,
@@ -366,12 +371,10 @@ function updateEnemies() {
 
 function updateDeathAnimation() {
   const player = game.player;
-  const DEATH_DURATION = 90; // frames (~1.5 seconds at 60fps)
-  const RISE_DURATION = 30;
   
   player.deathTimer++;
   
-  if (player.deathTimer <= RISE_DURATION) {
+  if (player.deathTimer <= DEATH_RISE_DURATION) {
     // Rise up phase
     player.deathVelY = -8;
     player.y += player.deathVelY;
@@ -411,14 +414,13 @@ function checkPlayerHazards() {
     if (!rectsIntersect(player, enemy)) continue;
     
     // Check if player is stomping (coming from above)
-    const stompThreshold = 10; // pixels
     const isStomping = player.velY > 0 && 
-                       player.y + player.height - stompThreshold < enemy.y + enemy.height / 2;
+                       player.y + player.height - STOMP_THRESHOLD < enemy.y + enemy.height / 2;
     
     if (isStomping) {
       // Kill enemy and bounce player
       game.enemies.splice(i, 1);
-      player.velY = JUMP_VELOCITY * 0.5; // Half jump bounce
+      player.velY = JUMP_VELOCITY * STOMP_BOUNCE; // Bounce based on constant
       player.onGround = false;
     } else {
       // Hit enemy from side - die
@@ -450,11 +452,6 @@ function render() {
 
   ctx.fillStyle = '#87ceeb';
   ctx.fillRect(0, 0, game.width, game.height);
-
-  // Increment animation frame for future sprite animations
-  if (typeof animationFrame !== 'undefined') {
-    animationFrame++;
-  }
 
   renderTiles();
   renderEnemies();
@@ -505,7 +502,7 @@ function renderPlayer() {
     // Draw death animation - rotate player
     ctx.save();
     ctx.translate(screenX + game.player.width / 2, screenY + game.player.height / 2);
-    ctx.rotate((game.player.deathTimer / 90) * Math.PI * 4); // Spin during death
+    ctx.rotate((game.player.deathTimer / DEATH_DURATION) * Math.PI * DEATH_SPIN_SPEED); // Spin during death
     ctx.fillStyle = '#212121';
     ctx.fillRect(-game.player.width / 2, -game.player.height / 2, game.player.width, game.player.height);
     ctx.restore();
