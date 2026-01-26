@@ -713,6 +713,73 @@ body {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
+}
+
+.draft-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.draft-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.draft-selector {
+  padding: 8px 12px;
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  background: white;
+  font-size: 14px;
+  cursor: pointer;
+  min-width: 150px;
+  max-width: 200px;
+  transition: all 0.2s;
+}
+
+.draft-selector:hover {
+  border-color: var(--primary-color);
+}
+
+.draft-selector:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.level-name-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.level-name-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.level-name-input {
+  padding: 8px 12px;
+  border: 2px solid var(--border-color);
+  border-radius: 4px;
+  background: white;
+  font-size: 14px;
+  min-width: 200px;
+  transition: all 0.2s;
+}
+
+.level-name-input:hover {
+  border-color: var(--primary-color);
+}
+
+.level-name-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
 }
 
 .tile-selector {
@@ -966,4 +1033,20 @@ body {
 
 .modal-btn.primary:hover {
   background: var(--secondary-color);
+}
+
+/* Draft badge styles */
+.draft-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  background: #ffa726;
+  color: white;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.draft-placeholder {
+  background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
 }
