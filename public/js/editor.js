@@ -415,7 +415,7 @@ async function createNewDraft() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        title: '', // Empty title triggers auto-generation of "New Level X" pattern in backend
+        title: '', // Empty title or "Untitled Level" triggers auto-generation of "New Level X" in backend
         description: '',
         level_data: {
           width: editor.gridWidth,

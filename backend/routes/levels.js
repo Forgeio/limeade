@@ -129,8 +129,8 @@ router.post('/', async (req, res) => {
         })
         .filter(n => n > 0);
       
-      // Use O(n) algorithm to find next number
-      const maxNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) : 0;
+      // Use O(n) algorithm to find next number (using reduce instead of spread to avoid stack overflow)
+      const maxNumber = existingNumbers.reduce((max, num) => Math.max(max, num), 0);
       levelTitle = `New Level ${maxNumber + 1}`;
     }
 
