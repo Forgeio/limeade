@@ -370,6 +370,32 @@ function updatePlayer() {
   }
 }
 
+// Helper functions for improved readability
+function isWallAtX(x, topY, midY, bottomY) {
+  return isSolidAt(x, topY) || isSolidAt(x, midY) || isSolidAt(x, bottomY);
+}
+
+function isPlayerTurning(inputDir, velX) {
+  return (inputDir > 0 && velX < 0) || (inputDir < 0 && velX > 0);
+}
+
+function canPerformLeftWallJump(player) {
+  const touchingOrCoyote = player.touchingWallLeft || 
+    (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === -1);
+  return touchingOrCoyote && player.canWallJumpLeft;
+}
+
+function canPerformRightWallJump(player) {
+  const touchingOrCoyote = player.touchingWallRight || 
+    (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === 1);
+  return touchingOrCoyote && player.canWallJumpRight;
+}
+
+function isPlayerSlidingOnWall(player) {
+  return (player.touchingWallLeft && game.keys.left) || 
+         (player.touchingWallRight && game.keys.right);
+}
+
 function detectWalls(player) {
   // Store previous wall state
   const wasTouchingLeft = player.touchingWallLeft;
@@ -380,21 +406,16 @@ function detectWalls(player) {
 
   if (player.onGround) return; // Don't detect walls when grounded
 
-  // Check for wall on the left
+  // Calculate check positions
   const leftCheckX = player.x - 1;
+  const rightCheckX = player.x + player.width + 1;
   const topY = player.y + 2;
   const midY = player.y + player.height / 2;
   const bottomY = player.y + player.height - 2;
 
-  if (isSolidAt(leftCheckX, topY) || isSolidAt(leftCheckX, midY) || isSolidAt(leftCheckX, bottomY)) {
-    player.touchingWallLeft = true;
-  }
-
-  // Check for wall on the right
-  const rightCheckX = player.x + player.width + 1;
-  if (isSolidAt(rightCheckX, topY) || isSolidAt(rightCheckX, midY) || isSolidAt(rightCheckX, bottomY)) {
-    player.touchingWallRight = true;
-  }
+  // Check for walls on each side
+  player.touchingWallLeft = isWallAtX(leftCheckX, topY, midY, bottomY);
+  player.touchingWallRight = isWallAtX(rightCheckX, topY, midY, bottomY);
 
   // Update wall coyote time
   if (wasTouchingLeft && !player.touchingWallLeft && !player.onGround) {
@@ -425,8 +446,7 @@ function updateHorizontalMovement(player, maxSpeed) {
   if (game.keys.right) inputDir = 1;
 
   if (inputDir !== 0) {
-    // Check if turning around (moving opposite to current velocity)
-    const turning = (inputDir > 0 && player.velX < 0) || (inputDir < 0 && player.velX > 0);
+    const turning = isPlayerTurning(inputDir, player.velX);
     const accel = turning ? acceleration * TURN_MULTIPLIER : acceleration;
 
     player.velX += inputDir * accel;
@@ -492,11 +512,7 @@ function performGroundJump(player, maxSpeed) {
 }
 
 function tryWallJump(player) {
-  // Check if touching wall or within wall coyote time
-  const canJumpLeft = (player.touchingWallLeft || (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === -1)) && player.canWallJumpLeft;
-  const canJumpRight = (player.touchingWallRight || (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === 1)) && player.canWallJumpRight;
-
-  if (canJumpLeft) {
+  if (canPerformLeftWallJump(player)) {
     // Wall is on left, jump to the right
     player.velX = WALL_JUMP_VELOCITY_X;
     player.velY = WALL_JUMP_VELOCITY_Y;
@@ -507,7 +523,7 @@ function tryWallJump(player) {
     return true;
   }
 
-  if (canJumpRight) {
+  if (canPerformRightWallJump(player)) {
     // Wall is on right, jump to the left
     player.velX = -WALL_JUMP_VELOCITY_X;
     player.velY = WALL_JUMP_VELOCITY_Y;
@@ -524,9 +540,7 @@ function tryWallJump(player) {
 function handleWallSlide(player) {
   if (player.onGround) return;
   
-  const isSlidingOnWall = (player.touchingWallLeft && game.keys.left) || (player.touchingWallRight && game.keys.right);
-  
-  if (isSlidingOnWall && player.velY > 0) {
+  if (isPlayerSlidingOnWall(player) && player.velY > 0) {
     // Apply wall stick for a brief moment
     if (player.wallStickTimer < WALL_STICK_FRAMES) {
       player.wallStickTimer++;
