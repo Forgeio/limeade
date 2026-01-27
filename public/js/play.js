@@ -1045,14 +1045,14 @@ function isSolidTile(x, y) {
 /**
  * Get the intersection mask for a dual-grid autotiling system.
  * 
- * In dual-grid autotiling, each tile corner is an "intersection point" shared by 4 tiles.
+ * In dual-grid autotiling, each intersection point is the top-left corner shared by 4 tiles.
  * This function checks which of those 4 tiles are solid and returns a 4-bit mask.
  * 
- * For intersection point at (x, y):
- * - Top-left tile: (x-1, y-1)
- * - Top-right tile: (x, y-1)
- * - Bottom-left tile: (x-1, y)
- * - Bottom-right tile: (x, y)
+ * For intersection point at (x, y), the 4 tiles that share this corner are:
+ * - Top-left tile: (x, y) - this is the tile whose top-left corner is at this intersection
+ * - Top-right tile: (x+1, y) - tile to the right
+ * - Bottom-left tile: (x, y+1) - tile below
+ * - Bottom-right tile: (x+1, y+1) - tile diagonally
  * 
  * @param {number} x - Intersection X coordinate
  * @param {number} y - Intersection Y coordinate
@@ -1061,11 +1061,11 @@ function isSolidTile(x, y) {
 function getIntersectionMask(x, y) {
   let mask = 0;
   
-  // Check the 4 tiles that meet at this intersection point
-  if (isSolidTile(x - 1, y - 1)) mask |= 1;  // Top-left
-  if (isSolidTile(x,     y - 1)) mask |= 2;  // Top-right
-  if (isSolidTile(x - 1, y))     mask |= 4;  // Bottom-left
-  if (isSolidTile(x,     y))     mask |= 8;  // Bottom-right
+  // Check the 4 tiles that meet at this intersection point (top-left corner)
+  if (isSolidTile(x,     y))     mask |= 1;  // Top-left tile
+  if (isSolidTile(x + 1, y))     mask |= 2;  // Top-right tile
+  if (isSolidTile(x,     y + 1)) mask |= 4;  // Bottom-left tile
+  if (isSolidTile(x + 1, y + 1)) mask |= 8;  // Bottom-right tile
   
   return mask;
 }
