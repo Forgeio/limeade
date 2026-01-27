@@ -1033,23 +1033,18 @@ function renderHurtbox() {
   ctx.restore();
 }
 
-function getIntersectionMask(x, y) {
-  // For the intersection point at grid position (x, y),
-  // check which of the 4 tiles sharing this corner are solid.
+function getVertexMask(vx, vy) {
+  // Check the 4 tiles around vertex (vx, vy)
   // Returns a 4-bit mask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
   let mask = 0;
-  const tl = isSolidTile(x,     y);
-  const tr = isSolidTile(x+1,  y);
-  const bl = isSolidTile(x,   y+1);
-  const br = isSolidTile(x+1, y+1);
-  if (tl) mask |= 1;
-  if (tr) mask |= 2;
-  if (bl) mask |= 4;
-  if (br) mask |= 8;
+  if (isTileSolidAtCoords(vx - 1, vy - 1)) mask |= 1; // TL
+  if (isTileSolidAtCoords(vx, vy - 1))     mask |= 2; // TR
+  if (isTileSolidAtCoords(vx - 1, vy))     mask |= 4; // BL
+  if (isTileSolidAtCoords(vx, vy))         mask |= 8; // BR
   return mask;
 }
 
-function isSolidTile(x, y) {
+function isTileSolidAtCoords(x, y) {
   const key = `${x},${y}`;
   const t = game.tiles[key];
   return t === 'ground' || t === 'tile';
@@ -1099,12 +1094,12 @@ function renderTiles() {
         screenY < -TILE_SIZE || screenY > game.height) continue;
 
     if (useTilesheet) {
-      // Calculate masks for each corner of this tile
-      const maskTL = getIntersectionMask(x, y);
-      const maskTR = getIntersectionMask(x + 1, y);
-      const maskBL = getIntersectionMask(x, y + 1);
-      const maskBR = getIntersectionMask(x + 1, y + 1);
-
+      // Calculate masks for each corner of this tile (Vertices)
+      
+      const maskTL = getVertexMask(x, y);         // TL corner of tile is vertex (x,y)
+      const maskTR = getVertexMask(x + 1, y);     // TR corner of tile is vertex (x+1,y)
+      const maskBL = getVertexMask(x, y + 1);     // BL corner of tile is vertex (x,y+1)
+      const maskBR = getVertexMask(x + 1, y + 1); // BR corner of tile is vertex (x+1,y+1)
 
       // Draw 4 sub-tiles (8x8 each) for this tile
       drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);
@@ -1116,6 +1111,7 @@ function renderTiles() {
       ctx.fillStyle = '#8b4513';
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
+
   }
 }
 
@@ -1123,13 +1119,29 @@ function renderTiles() {
 function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   if (mask === 0) return;
 
-  // The tilesheet is 64x64 with 16 tiles arranged in 4x4 grid
-  // Each tile is 16x16, we extract 8x8 quadrants
-  // mask (0-15) directly indexes which tile to use
-  const tileCol = mask % 4;
-  const tileRow = Math.floor(mask / 4);
-  const tileX = tileCol * 16;
-  const tileY = tileRow * 16;
+  // Mapping bitmask value to tilesheet coordinates (col, row)
+  const mapping = [
+    { c: 0, r: 3 }, // 0
+    { c: 3, r: 3 }, // 1
+    { c: 0, r: 2 }, // 2
+    { c: 1, r: 2 }, // 3
+    { c: 0, r: 0 }, // 4
+    { c: 3, r: 2 }, // 5
+    { c: 2, r: 3 }, // 6
+    { c: 3, r: 1 }, // 7
+    { c: 1, r: 3 }, // 8
+    { c: 0, r: 1 }, // 9
+    { c: 1, r: 0 }, // 10
+    { c: 2, r: 2 }, // 11
+    { c: 3, r: 0 }, // 12
+    { c: 2, r: 0 }, // 13
+    { c: 1, r: 1 }, // 14
+    { c: 2, r: 1 }  // 15
+  ];
+
+  const pos = mapping[mask] || mapping[0];
+  const tileX = pos.c * 16;
+  const tileY = pos.r * 16;
 
   // quadrant determines which 8x8 portion: 0=TL, 1=TR, 2=BL, 3=BR
   const qx = (quadrant % 2) * 8;
