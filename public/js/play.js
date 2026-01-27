@@ -1,22 +1,3 @@
-    // One-time debug: log a sample of game.tiles keys and isSolidTile keys checked (after game is defined)
-    if (typeof window !== 'undefined' && !window._autotileDebugLogged) {
-      window._autotileDebugLogged = true;
-      setTimeout(() => {
-        const allKeys = Object.keys(game.tiles);
-        console.log('[DEBUG] Sample of game.tiles keys:', allKeys.slice(0, 20));
-        window._autotileSolidKeys = [];
-        window._autotileSolidKeysLog = function(key) {
-          if (window._autotileSolidKeys.length < 20 && !window._autotileSolidKeys.includes(key)) {
-            window._autotileSolidKeys.push(key);
-          }
-        };
-        setTimeout(() => {
-          console.log('[DEBUG] Sample of isSolidTile keys checked:', window._autotileSolidKeys);
-        }, 2000);
-      }, 0);
-    }
-  // One-time debug: log all tile keys at first render (after game is defined)
-  // Debug output removed for clean console
 const TILE_SIZE = 16;
 
 // Physics constants (Scaled for 16px tiles)
@@ -1052,27 +1033,19 @@ function renderHurtbox() {
   ctx.restore();
 }
 
-function getIntersectionMask(x, y) {
-  // For the intersection point at grid position (x, y),
-  // check which of the 4 tiles sharing this corner are solid.
+function getVertexMask(vx, vy) {
+  // Check the 4 tiles around vertex (vx, vy)
   // Returns a 4-bit mask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
   let mask = 0;
-  const tl = isSolidTile(x,     y);
-  const tr = isSolidTile(x+1,  y);
-  const bl = isSolidTile(x,   y+1);
-  const br = isSolidTile(x+1, y+1);
-  if (tl) mask |= 1;
-  if (tr) mask |= 2;
-  if (bl) mask |= 4;
-  if (br) mask |= 8;
+  if (isTileSolidAtCoords(vx - 1, vy - 1)) mask |= 1; // TL
+  if (isTileSolidAtCoords(vx, vy - 1))     mask |= 2; // TR
+  if (isTileSolidAtCoords(vx - 1, vy))     mask |= 4; // BL
+  if (isTileSolidAtCoords(vx, vy))         mask |= 8; // BR
   return mask;
 }
 
-function isSolidTile(x, y) {
+function isTileSolidAtCoords(x, y) {
   const key = `${x},${y}`;
-  if (typeof window !== 'undefined' && window._autotileSolidKeysLog) {
-    window._autotileSolidKeysLog(key);
-  }
   const t = game.tiles[key];
   return t === 'ground' || t === 'tile';
 }
@@ -1120,37 +1093,13 @@ function renderTiles() {
     if (screenX < -TILE_SIZE || screenX > game.width ||
         screenY < -TILE_SIZE || screenY > game.height) continue;
 
-    // DEBUG: Draw a red rectangle for every ground/tile tile
-    ctx.save();
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
-    ctx.restore();
-
-    // DEBUG: Draw intersection points for this tile
-    const intersectionPoints = [
-      [0, 0, '#00ffff'], // TL
-      [1, 0, '#ff00ff'], // TR
-      [0, 1, '#ffff00'], // BL
-      [1, 1, '#00ff00']  // BR
-    ];
-    for (const [dx, dy, color] of intersectionPoints) {
-      ctx.save();
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(screenX + dx * TILE_SIZE, screenY + dy * TILE_SIZE, 2, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.restore();
-    }
-
     if (useTilesheet) {
-      // Calculate masks for each corner of this tile
-      const maskTL = getIntersectionMask(x, y);
-      const maskTR = getIntersectionMask(x + 1, y);
-      const maskBL = getIntersectionMask(x, y + 1);
-      const maskBR = getIntersectionMask(x + 1, y + 1);
-
+      // Calculate masks for each corner of this tile (Vertices)
+      
+      const maskTL = getVertexMask(x, y);         // TL corner of tile is vertex (x,y)
+      const maskTR = getVertexMask(x + 1, y);     // TR corner of tile is vertex (x+1,y)
+      const maskBL = getVertexMask(x, y + 1);     // BL corner of tile is vertex (x,y+1)
+      const maskBR = getVertexMask(x + 1, y + 1); // BR corner of tile is vertex (x+1,y+1)
 
       // Draw 4 sub-tiles (8x8 each) for this tile
       drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);
@@ -1162,6 +1111,7 @@ function renderTiles() {
       ctx.fillStyle = '#8b4513';
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
+
   }
 }
 
@@ -1169,13 +1119,29 @@ function renderTiles() {
 function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   if (mask === 0) return;
 
-  // The tilesheet is 64x64 with 16 tiles arranged in 4x4 grid
-  // Each tile is 16x16, we extract 8x8 quadrants
-  // mask (0-15) directly indexes which tile to use
-  const tileCol = mask % 4;
-  const tileRow = Math.floor(mask / 4);
-  const tileX = tileCol * 16;
-  const tileY = tileRow * 16;
+  // Mapping bitmask value to tilesheet coordinates (col, row)
+  const mapping = [
+    { c: 0, r: 3 }, // 0
+    { c: 3, r: 3 }, // 1
+    { c: 0, r: 2 }, // 2
+    { c: 1, r: 2 }, // 3
+    { c: 0, r: 0 }, // 4
+    { c: 3, r: 2 }, // 5
+    { c: 2, r: 3 }, // 6
+    { c: 3, r: 1 }, // 7
+    { c: 1, r: 3 }, // 8
+    { c: 0, r: 1 }, // 9
+    { c: 1, r: 0 }, // 10
+    { c: 2, r: 2 }, // 11
+    { c: 3, r: 0 }, // 12
+    { c: 2, r: 0 }, // 13
+    { c: 1, r: 1 }, // 14
+    { c: 2, r: 1 }  // 15
+  ];
+
+  const pos = mapping[mask] || mapping[0];
+  const tileX = pos.c * 16;
+  const tileY = pos.r * 16;
 
   // quadrant determines which 8x8 portion: 0=TL, 1=TR, 2=BL, 3=BR
   const qx = (quadrant % 2) * 8;
