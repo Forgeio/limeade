@@ -1081,8 +1081,17 @@ function getIntersectionMask(x, y) {
  * @param {number} destY - Destination Y on screen
  */
 function drawDualGridQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
+  // DEBUG: Log what we're trying to draw
+  if (typeof window !== 'undefined' && !window._dualgridDebugLogged) {
+    console.log('drawDualGridQuadrant called:', { mask, quadrant, destX, destY });
+    window._dualgridDebugLogged = true;
+  }
+  
   // Skip if mask is 0 (no tiles at this intersection)
-  if (mask === 0) return;
+  if (mask === 0) {
+    console.log(`Skipping quadrant ${quadrant} at (${destX},${destY}) - mask is 0`);
+    return;
+  }
   
   // The tilesheet is 64x64 with 16 tiles in a 4x4 grid
   // Each tile is 16x16 and contains 4 different 8x8 sub-tiles
@@ -1096,6 +1105,8 @@ function drawDualGridQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   // Quadrant numbering matches tilesheet layout: 0=TL, 1=TR, 2=BL, 3=BR
   const quadX = (quadrant % 2) * 8;
   const quadY = Math.floor(quadrant / 2) * 8;
+  
+  console.log(`Drawing quadrant ${quadrant} from tilesheet (${tileX + quadX}, ${tileY + quadY}) to screen (${destX}, ${destY})`);
   
   // Draw the 8x8 quadrant
   ctx.drawImage(tilesheet, tileX + quadX, tileY + quadY, 8, 8, destX, destY, 8, 8);
@@ -1153,6 +1164,12 @@ function renderTiles() {
       const maskTR = getIntersectionMask(x + 1, y);      // Top-right corner
       const maskBL = getIntersectionMask(x,     y + 1);  // Bottom-left corner
       const maskBR = getIntersectionMask(x + 1, y + 1);  // Bottom-right corner
+      
+      // DEBUG: Log masks for first few tiles
+      if (typeof window !== 'undefined' && (!window._maskDebugCount || window._maskDebugCount < 3)) {
+        console.log(`Tile at (${x},${y}): masks TL=${maskTL}, TR=${maskTR}, BL=${maskBL}, BR=${maskBR}`);
+        window._maskDebugCount = (window._maskDebugCount || 0) + 1;
+      }
       
       // Draw 4 quadrants (8x8 each) to compose the full 16x16 tile
       // Note: quadrant numbers are mapped specifically to match tilesheet layout
