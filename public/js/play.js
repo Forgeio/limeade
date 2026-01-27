@@ -1043,76 +1043,6 @@ function isSolidTile(x, y) {
 }
 
 /**
- * Get the intersection mask for a dual-grid autotiling system.
- * 
- * In dual-grid autotiling, each intersection point is the top-left corner shared by 4 tiles.
- * This function checks which of those 4 tiles are solid and returns a 4-bit mask.
- * 
- * For intersection point at (x, y), the 4 tiles that share this corner are:
- * - Top-left tile: (x, y) - this is the tile whose top-left corner is at this intersection
- * - Top-right tile: (x+1, y) - tile to the right
- * - Bottom-left tile: (x, y+1) - tile below
- * - Bottom-right tile: (x+1, y+1) - tile diagonally
- * 
- * @param {number} x - Intersection X coordinate
- * @param {number} y - Intersection Y coordinate
- * @returns {number} 4-bit mask (0-15): bit0=TL, bit1=TR, bit2=BL, bit3=BR
- */
-function getIntersectionMask(x, y) {
-  let mask = 0;
-  
-  // Check the 4 tiles that meet at this intersection point (top-left corner)
-  if (isSolidTile(x,     y))     mask |= 1;  // Top-left tile
-  if (isSolidTile(x + 1, y))     mask |= 2;  // Top-right tile
-  if (isSolidTile(x,     y + 1)) mask |= 4;  // Bottom-left tile
-  if (isSolidTile(x + 1, y + 1)) mask |= 8;  // Bottom-right tile
-  
-  return mask;
-}
-
-/**
- * Draw a single 8x8 quadrant from the autotile sheet using dual-grid system.
- * 
- * @param {CanvasRenderingContext2D} ctx - Canvas context
- * @param {Image} tilesheet - 64x64 tilesheet with 4x4 grid of 16x16 tiles
- * @param {number} mask - 4-bit mask (0-15) from intersection check
- * @param {number} quadrant - Which 8x8 quadrant to extract (0-3, tilesheet-specific mapping)
- * @param {number} destX - Destination X on screen
- * @param {number} destY - Destination Y on screen
- */
-function drawDualGridQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
-  // DEBUG: Log what we're trying to draw
-  if (typeof window !== 'undefined' && !window._dualgridDebugLogged) {
-    console.log('drawDualGridQuadrant called:', { mask, quadrant, destX, destY });
-    window._dualgridDebugLogged = true;
-  }
-  
-  // Skip if mask is 0 (no tiles at this intersection)
-  if (mask === 0) {
-    console.log(`Skipping quadrant ${quadrant} at (${destX},${destY}) - mask is 0`);
-    return;
-  }
-  
-  // The tilesheet is 64x64 with 16 tiles in a 4x4 grid
-  // Each tile is 16x16 and contains 4 different 8x8 sub-tiles
-  // mask (0-15) selects which 16x16 tile to use
-  const tileCol = mask % 4;
-  const tileRow = Math.floor(mask / 4);
-  const tileX = tileCol * 16;
-  const tileY = tileRow * 16;
-  
-  // Extract the appropriate 8x8 quadrant from the 16x16 source tile
-  // Quadrant numbering matches tilesheet layout: 0=TL, 1=TR, 2=BL, 3=BR
-  const quadX = (quadrant % 2) * 8;
-  const quadY = Math.floor(quadrant / 2) * 8;
-  
-  console.log(`Drawing quadrant ${quadrant} from tilesheet (${tileX + quadX}, ${tileY + quadY}) to screen (${destX}, ${destY})`);
-  
-  // Draw the 8x8 quadrant
-  ctx.drawImage(tilesheet, tileX + quadX, tileY + quadY, 8, 8, destX, destY, 8, 8);
-}
-
-/**
  * Render all tiles in the level using dual-grid autotiling for ground tiles.
  */
 function renderTiles() {
@@ -1158,32 +1088,98 @@ function renderTiles() {
         screenY < -TILE_SIZE || screenY > game.height) continue;
 
     if (useTilesheet) {
-      // Dual-grid autotiling: Check the 4 intersection points (corners) of this tile
-      // Each corner checks the 4 tiles that meet at that point
-      const maskTL = getIntersectionMask(x,     y);      // Top-left corner
-      const maskTR = getIntersectionMask(x + 1, y);      // Top-right corner
-      const maskBL = getIntersectionMask(x,     y + 1);  // Bottom-left corner
-      const maskBR = getIntersectionMask(x + 1, y + 1);  // Bottom-right corner
+      // Dual-grid autotiling using marching squares approach
+      // Check 8 neighbors to determine which of 4 sub-tiles to use
+      const hasTop = isSolidTile(x, y - 1);
+      const hasRight = isSolidTile(x + 1, y);
+      const hasBottom = isSolidTile(x, y + 1);
+      const hasLeft = isSolidTile(x - 1, y);
+      const hasTopLeft = isSolidTile(x - 1, y - 1);
+      const hasTopRight = isSolidTile(x + 1, y - 1);
+      const hasBottomLeft = isSolidTile(x - 1, y + 1);
+      const hasBottomRight = isSolidTile(x + 1, y + 1);
       
-      // DEBUG: Log masks for first few tiles
+      // For each quadrant, determine the tile based on its 3 relevant neighbors
+      // Top-left quadrant: check top, left, top-left
+      let maskTL = 0;
+      if (hasTop) maskTL |= 1;
+      if (hasLeft) maskTL |= 2;
+      if (hasTop && hasLeft && hasTopLeft) maskTL |= 4;
+      if (!hasTop && !hasLeft) maskTL = 0;  // Empty corner
+      else if (hasTop && hasLeft && !hasTopLeft) maskTL = 15;  // Inner corner
+      else if (hasTop && !hasLeft) maskTL = 1;  // Horizontal edge
+      else if (!hasTop && hasLeft) maskTL = 2;  // Vertical edge
+      else maskTL = 3;  // Full corner
+      
+      // Top-right quadrant: check top, right, top-right
+      let maskTR = 0;
+      if (!hasTop && !hasRight) maskTR = 0;
+      else if (hasTop && hasRight && !hasTopRight) maskTR = 15;
+      else if (hasTop && !hasRight) maskTR = 1;
+      else if (!hasTop && hasRight) maskTR = 2;
+      else maskTR = 3;
+      
+      // Bottom-left quadrant: check bottom, left, bottom-left
+      let maskBL = 0;
+      if (!hasBottom && !hasLeft) maskBL = 0;
+      else if (hasBottom && hasLeft && !hasBottomLeft) maskBL = 15;
+      else if (hasBottom && !hasLeft) maskBL = 1;
+      else if (!hasBottom && hasLeft) maskBL = 2;
+      else maskBL = 3;
+      
+      // Bottom-right quadrant: check bottom, right, bottom-right
+      let maskBR = 0;
+      if (!hasBottom && !hasRight) maskBR = 0;
+      else if (hasBottom && hasRight && !hasBottomRight) maskBR = 15;
+      else if (hasBottom && !hasRight) maskBR = 1;
+      else if (!hasBottom && hasRight) maskBR = 2;
+      else maskBR = 3;
+      
+      // DEBUG
       if (typeof window !== 'undefined' && (!window._maskDebugCount || window._maskDebugCount < 3)) {
-        console.log(`Tile at (${x},${y}): masks TL=${maskTL}, TR=${maskTR}, BL=${maskBL}, BR=${maskBR}`);
+        console.log(`Tile at (${x},${y}): neighbors T=${hasTop} R=${hasRight} B=${hasBottom} L=${hasLeft}`);
+        console.log(`  Masks: TL=${maskTL}, TR=${maskTR}, BL=${maskBL}, BR=${maskBR}`);
         window._maskDebugCount = (window._maskDebugCount || 0) + 1;
       }
       
-      // Draw 4 quadrants (8x8 each) to compose the full 16x16 tile
-      // Note: quadrant numbers are mapped specifically to match tilesheet layout
-      // Quadrants with mask=0 will be skipped automatically
-      drawDualGridQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);      // TL quadrant
-      drawDualGridQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);      // TR quadrant
-      drawDualGridQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);  // BL quadrant
-      drawDualGridQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);  // BR quadrant
+      // Draw 4 quadrants using the marching squares masks
+      drawDualGridQuadrant(ctx, tilesheet, maskTL, 0, screenX,     screenY);
+      drawDualGridQuadrant(ctx, tilesheet, maskTR, 1, screenX + 8, screenY);
+      drawDualGridQuadrant(ctx, tilesheet, maskBL, 2, screenX,     screenY + 8);
+      drawDualGridQuadrant(ctx, tilesheet, maskBR, 3, screenX + 8, screenY + 8);
     } else {
       // Fallback when tilesheet is not loaded
       ctx.fillStyle = '#8b4513';
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
   }
+}
+
+/**
+ * Draw a single 8x8 quadrant from the autotile sheet using dual-grid system.
+ * 
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Image} tilesheet - 64x64 tilesheet with 4x4 grid of 16x16 tiles
+ * @param {number} mask - Tile index (0-15) based on neighbor configuration
+ * @param {number} quadrant - Which 8x8 quadrant (0=TL, 1=TR, 2=BL, 3=BR)
+ * @param {number} destX - Destination X on screen
+ * @param {number} destY - Destination Y on screen
+ */
+function drawDualGridQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
+  // The tilesheet is 64x64 with 16 tiles in a 4x4 grid
+  // Each tile is 16x16 and contains 4 different 8x8 sub-tiles
+  // mask (0-15) selects which 16x16 tile to use
+  const tileCol = mask % 4;
+  const tileRow = Math.floor(mask / 4);
+  const tileX = tileCol * 16;
+  const tileY = tileRow * 16;
+  
+  // Extract the appropriate 8x8 quadrant from the 16x16 source tile
+  const quadX = (quadrant % 2) * 8;
+  const quadY = Math.floor(quadrant / 2) * 8;
+  
+  // Draw the 8x8 quadrant
+  ctx.drawImage(tilesheet, tileX + quadX, tileY + quadY, 8, 8, destX, destY, 8, 8);
 }
 
 function renderEnemies() {
