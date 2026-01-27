@@ -1,8 +1,8 @@
 const TILE_SIZE = 16;
 
 // Physics constants (Scaled for 16px tiles)
-const GRAVITY = 0.24;
-const MAX_FALL_SPEED = 9;
+const GRAVITY = 0.3;
+const MAX_FALL_SPEED = 8;
 
 // Movement constants
 const PLAYER_SPEED = 4; // ~Half of 7.5
@@ -13,30 +13,25 @@ const AIR_FRICTION = 0.94;
 const TURN_MULTIPLIER = 1.8;
 
 // Jump constants
-const BASE_JUMP_VELOCITY = -5.8;
-const SPEED_JUMP_BONUS = -1.5;
+const BASE_JUMP_VELOCITY = -7;
+const BOUNCE_VELOCITY = -4;
+const SPEED_JUMP_BONUS = 0;
 const JUMP_CUT_MULTIPLIER = 0.4;
 const COYOTE_TIME = 8;
 const JUMP_BUFFER = 6;
 
 // Combat constants
 const ATTACK_DURATION = 6;
-const ATTACK_COOLDOWN = 14;
-const ATTACK_RANGE = 12; // Adjusted range
-const ATTACK_BOUNCE = 0.5;
-const SPIKE_ATTACK_BOUNCE = 0.5;
-const SPIKE_PERFECT_BONUS = 0.25;
-const ATTACK_LUNGE_SPEED = 1.9;
-const ATTACK_LUNGE_DOWN_SPEED = 1.3;
-const ATTACK_LUNGE_DECAY = 0.86;
-const DYNAMIC_BOUNCE_BONUS = 0.4;
+const ATTACK_COOLDOWN = 16;
+const ATTACK_RANGE = 16; // Adjusted range
 
 // Wall jump constants
 const WALL_SLIDE_SPEED = 1.5;
-const WALL_JUMP_VELOCITY_X = 3.5;
-const WALL_JUMP_VELOCITY_Y = -5.8;
-const WALL_COYOTE_TIME = 6; // Frames of grace after leaving wall
-const WALL_STICK_FRAMES = 3; // Brief stick to wall before sliding
+const WALL_JUMP_VELOCITY_X = 3;
+const WALL_JUMP_VELOCITY_Y = -5;
+const WALL_COYOTE_TIME = 4; // Frames of grace after leaving wall
+const WALL_STICK_FRAMES = 2; // Brief stick to wall before sliding
+const WALL_JUMP_COOLDOWN = 15; // Cooldown between wall jumps
 
 // Death animation constants
 const DEATH_DURATION = 60;
@@ -80,6 +75,7 @@ const game = {
     wallCoyoteDirection: 0, // -1 for left wall, 1 for right wall
     canWallJumpLeft: true,
     canWallJumpRight: true,
+    wallJumpCooldown: 0,
     wallStickTimer: 0,
     wasPressingWallLeft: false,
     wasPressingWallRight: false,
@@ -89,6 +85,7 @@ const game = {
     // Attack state
     facing: 1,
     attackTimer: 0,
+    attackAnimTimer: 0,
     attackCooldown: 0,
     attackDir: { x: 1, y: 0 },
     attackLungeVelX: 0,
@@ -121,6 +118,7 @@ const game = {
     playerWallSlide: null,
     playerDie: null,
     playerIdle: null,
+    playerPunch: null,
     spike: null,
     enemyWalk: null,
     tilesheet: null,
@@ -134,6 +132,7 @@ function loadAssets() {
     loadImage('graphics/player_wall_slide.png').then(img => game.assets.playerWallSlide = img),
     loadImage('graphics/player_die.png').then(img => game.assets.playerDie = img),
     loadImage('graphics/player_idle.png').then(img => game.assets.playerIdle = img),
+    loadImage('graphics/player_hand_punch.png').then(img => game.assets.playerPunch = img),
     loadImage('graphics/spike.png').then(img => game.assets.spike = img),
     loadImage('graphics/enemy1_walk.png').then(img => game.assets.enemyWalk = img),
     loadImage('graphics/tilesheet_1.png').then(img => {
@@ -308,6 +307,7 @@ function resetLevelState() {
   game.levelWidth = levelData.width || 50;
   game.levelHeight = levelData.height || 20;
   game.tiles = levelData.tiles || {};
+  game.animTime = 0;
 
   game.enemies = [];
   game.spawn = { x: TILE_SIZE, y: TILE_SIZE };
@@ -331,7 +331,8 @@ function resetLevelState() {
         velY: 0,
         direction: 1,
         onGround: false,
-        active: false
+        active: false,
+        dead: false
       });
     }
   });
@@ -346,14 +347,9 @@ function resetPlayer() {
   game.player.wasOnGround = false;
   game.player.dead = false;
 
-  // Clear all inputs on respawn
-  game.keys.left = false;
-  game.keys.right = false;
-  game.keys.up = false;
-  game.keys.down = false;
-  game.keys.jump = false;
+  // Clear pulse inputs on respawn, but keep held inputs (left, right, jump hold) active
+  // This allows seamless movement if keys are held during respawn
   game.keys.jumpPressed = false;
-  game.keys.attack = false;
   game.keys.attackPressed = false;
 
   game.player.deathTimer = 0;
@@ -370,6 +366,7 @@ function resetPlayer() {
   game.player.wallCoyoteDirection = 0;
   game.player.canWallJumpLeft = true;
   game.player.canWallJumpRight = true;
+  game.player.wallJumpCooldown = 0;
   game.player.wallStickTimer = 0;
   game.player.wasPressingWallLeft = false;
   game.player.wasPressingWallRight = false;
@@ -379,6 +376,7 @@ function resetPlayer() {
   game.player.jumpHeld = false;
   game.player.facing = 1;
   game.player.attackTimer = 0;
+  game.player.attackAnimTimer = 0;
   game.player.attackCooldown = 0;
   game.player.attackDir = { x: 1, y: 0 };
   game.player.attackLungeVelX = 0;
@@ -415,6 +413,8 @@ function gameLoop(timestamp) {
 }
 
 function update() {
+  game.animTime = (game.animTime || 0) + TIMESTEP;
+
   // Update timer if started and not completed
   if (game.timer.started && !game.levelCompleted && !game.player.dead) {
     game.timer.currentTime = performance.now() - game.timer.startTime;
@@ -450,6 +450,10 @@ function updatePlayer() {
 
   // Detect walls before movement
   detectWalls(player);
+
+  if (player.wallJumpCooldown > 0) {
+    player.wallJumpCooldown--;
+  }
 
   // Handle horizontal movement with acceleration and friction
   updateHorizontalMovement(player, maxSpeed);
@@ -497,6 +501,7 @@ function updatePlayer() {
     player.canWallJumpLeft = true;
     player.canWallJumpRight = true;
     player.wallStickTimer = 0;
+    // Don't reset wallJumpCooldown instantly, let it expire
   }
 }
 
@@ -512,13 +517,13 @@ function isPlayerTurning(inputDir, velX) {
 function canPerformLeftWallJump(player) {
   const touchingOrCoyote = player.touchingWallLeft || 
     (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === -1);
-  return touchingOrCoyote && player.canWallJumpLeft;
+  return touchingOrCoyote && player.wallJumpCooldown === 0;
 }
 
 function canPerformRightWallJump(player) {
   const touchingOrCoyote = player.touchingWallRight || 
     (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === 1);
-  return touchingOrCoyote && player.canWallJumpRight;
+  return touchingOrCoyote && player.wallJumpCooldown === 0;
 }
 
 function isPlayerSlidingOnWall(player) {
@@ -556,14 +561,6 @@ function detectWalls(player) {
   if (wasTouchingRight && !player.touchingWallRight && !player.onGround && player.wasPressingWallRight) {
     player.wallCoyoteTimer = WALL_COYOTE_TIME;
     player.wallCoyoteDirection = 1;
-  }
-
-  // Reset wall jump ability when touching opposite wall
-  if (player.touchingWallLeft) {
-    player.canWallJumpRight = true;
-  }
-  if (player.touchingWallRight) {
-    player.canWallJumpLeft = true;
   }
 }
 
@@ -620,6 +617,7 @@ function handleAttack() {
 
   if (player.attackCooldown > 0) player.attackCooldown--;
   if (player.attackTimer > 0) player.attackTimer--;
+  if (player.attackAnimTimer > 0) player.attackAnimTimer--;
 
   if (game.keys.attackPressed && player.attackCooldown === 0) {
     let dirX = 0;
@@ -639,71 +637,79 @@ function handleAttack() {
 
     player.attackDir = { x: dirX, y: dirY };
     player.attackTimer = ATTACK_DURATION;
+    player.attackAnimTimer = ATTACK_DURATION; // Keep decoupled from hitbox logic
     player.attackCooldown = ATTACK_COOLDOWN;
-
-    if (dirY > 0) {
-      if (!player.onGround) player.velY = ATTACK_LUNGE_DOWN_SPEED; // Override velocity
-    } else if (dirY === 0) {
-      player.velX = ATTACK_LUNGE_SPEED * dirX; // Set velocity directly for consistency
-    }
   }
   game.keys.attackPressed = false;
 
   if (player.attackTimer <= 0) return;
 
   const hurtbox = getHurtbox(player);
+  // Consider the first two frames as "impact frames" for pogo purposes
+  // logic executes frame 0 (timer=DURATION) and frame 1 (timer=DURATION-1)
+  // ATTACK_DURATION usually 6. 
+  // If timer started at 6, loop runs with 6, then 5. Impact needs to be checked on these logic frames.
+  const isImpactFrame = player.attackTimer >= ATTACK_DURATION - 1;
 
-  for (let i = game.enemies.length - 1; i >= 0; i--) {
-    const enemy = game.enemies[i];
-    if (!rectsIntersect(hurtbox, enemy)) continue;
+  let hitData = null; // { type: 'enemy' | 'wall' | 'spike', obj: any, dist: number }
+  const cx = player.x + player.width / 2;
+  const cy = player.y + player.height / 2;
 
-    game.enemies.splice(i, 1);
-
-    if (player.attackDir.y > 0 && player.y + player.height <= enemy.y + enemy.height * 0.6) {
-      // Calculate bounce based on distance (Tip of sword = higher bounce)
-      // enemy.y - hurtbox.y is approx 0 for deep hit, 32 for max tip hit
-      const dist = enemy.y - hurtbox.y; 
-      
-      // REQUIREMENT: Only bounce if hitting with the edge (bottom 40%)
-      if (dist > hurtbox.height * 0.60) {
-        const ratio = Math.max(0, Math.min(1, dist / (hurtbox.height * 0.8)));
-
-        player.velY = BASE_JUMP_VELOCITY * (ATTACK_BOUNCE + (DYNAMIC_BOUNCE_BONUS * ratio));
-        player.onGround = false;
-        player.isJumping = false; 
+  // 1. Check Enemies
+  for (const enemy of game.enemies) {
+    if (rectsIntersect(hurtbox, enemy)) {
+      const dist = Math.abs((enemy.x + enemy.width / 2) - cx) + Math.abs((enemy.y + enemy.height / 2) - cy);
+      if (!hitData || dist < hitData.dist) {
+        hitData = { type: 'enemy', obj: enemy, dist: dist };
       }
     }
   }
 
-  if (player.attackDir.y > 0) {
-    const nearbyTiles = getCollidingTiles(hurtbox, true);
-    // Find the lowest spiked tile we are hitting (furthest away)
-    let maxDist = -Infinity;
-    let hitSpike = false;
+  // 2. Check Walls (Solid Blocks)
+  const walls = getCollidingTiles(hurtbox).filter(t => isSolidTile(t.type));
+  for (const wall of walls) {
+    const dist = Math.abs((wall.x + wall.width / 2) - cx) + Math.abs((wall.y + wall.height / 2) - cy);
+    if (!hitData || dist < hitData.dist) {
+      hitData = { type: 'wall', obj: wall, dist: dist };
+    }
+  }
 
-    nearbyTiles.forEach(tile => {
-      if (tile.type === 'spike' && rectsIntersect(hurtbox, tile)) {
-        hitSpike = true;
-        const d = tile.y - hurtbox.y;
-        if (d > maxDist) maxDist = d;
-      }
-    });
+  // 3. Process Closest Hit
+  if (hitData) {
+    // End attack immediately on hit (except purely visual hits, but mechanics say end it)
+    player.attackTimer = 0;
+
+    if (hitData.type === 'enemy') {
+       const enemy = hitData.obj;
+       if (!enemy.dead) {
+         enemy.dead = true;
+         // Small hop when killed, then gravity takes over in updateEnemies
+         enemy.velY = -3;
+         // Ensure they stay active for the death fall
+         enemy.active = true;
+       }
+
+       // Check pogo on enemy
+       if (player.attackDir.y > 0 && isImpactFrame) {
+         player.velY = BOUNCE_VELOCITY;
+         player.onGround = false;
+         player.isJumping = false;
+       }
+    }
+    // If 'wall', attack just ends (clink).
+    return; // Stop processing frame
+  }
+
+  // 4. Spike Pogo Logic (only if we didn't hit a wall/enemy blocking the way)
+  if (player.attackDir.y > 0 && isImpactFrame) {
+    const nearbyHazards = getCollidingTiles(hurtbox, true);
+    const hitSpike = nearbyHazards.some(tile => tile.type === 'spike' && rectsIntersect(hurtbox, tile));
 
     if (hitSpike) {
-       // Deep hit (close to player) -> Small bounce
-       // Tip hit (far from player) -> Big bounce
-       
-       // REQUIREMENT: Only bounce if hitting with the edge (bottom 40%)
-       if (maxDist > hurtbox.height * 0.60) {
-          const ratio = Math.max(0, Math.min(1, maxDist / (hurtbox.height * 0.8)));
-          
-          // If the ratio is very high (perfect spacing), add the extra bonus
-          const extra = ratio > 0.9 ? SPIKE_PERFECT_BONUS : 0;
-          
-          player.velY = BASE_JUMP_VELOCITY * (SPIKE_ATTACK_BOUNCE + (DYNAMIC_BOUNCE_BONUS * ratio) + extra);
-          player.onGround = false;
-          player.isJumping = false;
-       }
+      player.velY = BOUNCE_VELOCITY;
+      player.onGround = false;
+      player.isJumping = false;
+      player.attackTimer = 0; // End attack on pogo too
     }
   }
 }
@@ -760,7 +766,7 @@ function tryWallJump(player) {
     // Wall is on left, jump to the right
     player.velX = WALL_JUMP_VELOCITY_X;
     player.velY = WALL_JUMP_VELOCITY_Y;
-    player.canWallJumpLeft = false;
+    player.wallJumpCooldown = WALL_JUMP_COOLDOWN;
     player.isJumping = true;
     player.wallCoyoteTimer = 0;
     player.touchingWallLeft = false;
@@ -771,7 +777,7 @@ function tryWallJump(player) {
     // Wall is on right, jump to the left
     player.velX = -WALL_JUMP_VELOCITY_X;
     player.velY = WALL_JUMP_VELOCITY_Y;
-    player.canWallJumpRight = false;
+    player.wallJumpCooldown = WALL_JUMP_COOLDOWN;
     player.isJumping = true;
     player.wallCoyoteTimer = 0;
     player.touchingWallRight = false;
@@ -874,7 +880,15 @@ function updateEnemies() {
     if (!enemy.active && inView) {
       enemy.active = true;
     }
-    if (!enemy.active) return;
+    
+    // Always process dead enemies (falling off screen)
+    if (!enemy.active && !enemy.dead) return;
+
+    if (enemy.dead) {
+        enemy.velY = Math.min(enemy.velY + GRAVITY, MAX_FALL_SPEED);
+        enemy.y += enemy.velY;
+        return;
+    }
 
     enemy.onGround = false;
     enemy.velY = Math.min(enemy.velY + GRAVITY, MAX_FALL_SPEED);
@@ -883,8 +897,16 @@ function updateEnemies() {
     enemy.x += enemy.velX * enemy.direction;
 
     let enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
-    const collisionsX = getCollidingTiles(enemyBox).filter((tile) => isSolidTile(tile.type));
-    if (collisionsX.length) {
+
+    // Check tiles (Solid AND Spikes)
+    const collisionsX = getCollidingTiles(enemyBox, true).filter((tile) => {
+        return isSolidTile(tile.type) || tile.type === 'spike';
+    });
+    
+    // Check other enemies
+    const hitEnemy = game.enemies.find(e => e !== enemy && e.active && !e.dead && rectsIntersect(enemyBox, e));
+
+    if (collisionsX.length || hitEnemy) {
       enemy.direction *= -1;
       enemy.x += enemy.velX * enemy.direction;
     }
@@ -913,6 +935,9 @@ function updateEnemies() {
       }
     }
   });
+
+  // Remove enemies that have fallen far off the map
+  game.enemies = game.enemies.filter(e => e.y < (game.levelHeight + 5) * TILE_SIZE);
 }
 
 function updateDeathAnimation() {
@@ -962,6 +987,7 @@ function checkPlayerHazards() {
   // Check enemy collisions (no stomp mechanic)
   for (let i = game.enemies.length - 1; i >= 0; i--) {
     const enemy = game.enemies[i];
+    if (enemy.dead) continue;
     if (!rectsIntersect(player, enemy)) continue;
     killPlayer();
     return;
@@ -977,6 +1003,7 @@ function killPlayer() {
   
   // Clear attack state
   game.player.attackTimer = 0;
+  game.player.attackAnimTimer = 0;
   game.player.attackCooldown = 0;
 }
 
@@ -1020,17 +1047,49 @@ function getHurtbox(player) {
 }
 
 function renderHurtbox() {
-  if (game.player.attackTimer <= 0) return;
+  const p = game.player;
+  if (p.attackAnimTimer <= 0) return;
   const ctx = game.ctx;
-  const hurtbox = getHurtbox(game.player);
+  const hurtbox = getHurtbox(p);
   const screenX = hurtbox.x - game.camera.x;
   const screenY = hurtbox.y - game.camera.y;
 
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(screenX, screenY, hurtbox.width, hurtbox.height);
-  ctx.restore();
+  const sprite = game.assets.playerPunch;
+  
+  if (sprite) {
+    const centerX = screenX + hurtbox.width / 2;
+    const centerY = screenY + hurtbox.height / 2;
+
+    // Animation frame logic
+    const totalFrames = 3;
+    const progress = ATTACK_DURATION - p.attackAnimTimer; 
+    let frame = Math.floor(progress / (ATTACK_DURATION / totalFrames));
+    if (frame >= totalFrames) frame = totalFrames - 1;
+
+    ctx.save();
+    ctx.translate(centerX, centerY);
+
+    // Rotation/Flip logic
+    if (p.attackDir.y < 0) { // Up
+        ctx.rotate(-Math.PI / 2);
+    } else if (p.attackDir.y > 0) { // Down
+        ctx.rotate(Math.PI / 2);
+    } else if (p.attackDir.x < 0) { // Left
+        ctx.scale(-1, 1);
+    }
+    // Right is default
+
+    // Draw centered 16x16 sprite
+    ctx.drawImage(sprite, frame * 16, 0, 16, 16, -8, -8, 16, 16);
+    ctx.restore();
+  } else {
+    // Fallback debug rect
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(screenX, screenY, hurtbox.width, hurtbox.height);
+    ctx.restore();
+  }
 }
 
 function getVertexMask(vx, vy) {
@@ -1068,8 +1127,8 @@ function renderTiles() {
       const type = game.tiles[`${x},${y}`];
       if (!type) continue;
       
-      const screenX = x * TILE_SIZE - game.camera.x;
-      const screenY = y * TILE_SIZE - game.camera.y;
+      const screenX = Math.round(x * TILE_SIZE - game.camera.x);
+      const screenY = Math.round(y * TILE_SIZE - game.camera.y);
       
       if (type === 'spike' && game.assets.spike) {
         drawTile(ctx, type, screenX, screenY, TILE_SIZE, 0, 0, game.assets.spike);
@@ -1086,8 +1145,8 @@ function renderTiles() {
     if (type !== 'ground' && type !== 'tile') continue;
 
     const [x, y] = key.split(',').map(Number);
-    const screenX = x * TILE_SIZE - game.camera.x;
-    const screenY = y * TILE_SIZE - game.camera.y;
+    const screenX = Math.round(x * TILE_SIZE - game.camera.x);
+    const screenY = Math.round(y * TILE_SIZE - game.camera.y);
 
     // Skip if off-screen
     if (screenX < -TILE_SIZE || screenX > game.width ||
@@ -1163,11 +1222,14 @@ function renderEnemies() {
 
   game.enemies.forEach((enemy) => {
     // Only animate if active/close
-    if (!enemy.active) return;
+    if (!enemy.active && !enemy.dead) return;
     
-    // Use game timer as animation clock for all enemies to stay in sync (or give them individual timers if preferred)
-    // For now simple sync is fine
-    const frame = Math.floor(game.timer.currentTime / (1000/frameRate)) % 2; // Assuming 2 frames for walk
+    // Use global animation time for sync
+    let frame = Math.floor(game.animTime / (1000/frameRate)) % 2; 
+
+    if (enemy.dead) {
+      frame = 1; // Use second frame for dead state
+    }
     
     const screenX = Math.round(enemy.x - game.camera.x);
     const screenY = Math.round(enemy.y - game.camera.y);
@@ -1180,6 +1242,11 @@ function renderEnemies() {
         // If moving LEFT (-1), FLIP it.
         if (enemy.direction < 0) ctx.scale(-1, 1);
         
+        // If dead, maybe flip vertically too? Optional. User just said "second frame... fall off".
+        if (enemy.dead) {
+            ctx.scale(1, -1); // Upside down fall? "fall off the map"
+        }
+
         // Draw 16x16 sprite
         // Offset by -8 to center
         ctx.drawImage(game.assets.enemyWalk, frame * 16, 0, 16, 16, -8, -8, 16, 16);
