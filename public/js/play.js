@@ -1,40 +1,67 @@
-const TILE_SIZE = 32;
+    // One-time debug: log a sample of game.tiles keys and isSolidTile keys checked (after game is defined)
+    if (typeof window !== 'undefined' && !window._autotileDebugLogged) {
+      window._autotileDebugLogged = true;
+      setTimeout(() => {
+        const allKeys = Object.keys(game.tiles);
+        console.log('[DEBUG] Sample of game.tiles keys:', allKeys.slice(0, 20));
+        window._autotileSolidKeys = [];
+        window._autotileSolidKeysLog = function(key) {
+          if (window._autotileSolidKeys.length < 20 && !window._autotileSolidKeys.includes(key)) {
+            window._autotileSolidKeys.push(key);
+          }
+        };
+        setTimeout(() => {
+          console.log('[DEBUG] Sample of isSolidTile keys checked:', window._autotileSolidKeys);
+        }, 2000);
+      }, 0);
+    }
+  // One-time debug: log all tile keys at first render (after game is defined)
+  // Debug output removed for clean console
+const TILE_SIZE = 16;
 
-// Physics constants
-const GRAVITY = 0.55;
-const MAX_FALL_SPEED = 18;
+// Physics constants (Scaled for 16px tiles)
+const GRAVITY = 0.24;
+const MAX_FALL_SPEED = 9;
 
 // Movement constants
-const WALK_SPEED = 4.5;
-const RUN_SPEED = 7.5;
-const GROUND_ACCELERATION = 0.6;
-const AIR_ACCELERATION = 0.4;
+const PLAYER_SPEED = 4; // ~Half of 7.5
+const GROUND_ACCELERATION = 0.3;
+const AIR_ACCELERATION = 0.2;
 const GROUND_FRICTION = 0.82;
 const AIR_FRICTION = 0.94;
-const TURN_MULTIPLIER = 1.8; // Faster acceleration when turning around
+const TURN_MULTIPLIER = 1.8;
 
 // Jump constants
-const BASE_JUMP_VELOCITY = -11;
-const SPEED_JUMP_BONUS = -3; // Additional jump power at max speed
-const JUMP_CUT_MULTIPLIER = 0.4; // Velocity multiplier when releasing jump early
-const COYOTE_TIME = 8; // Frames of grace period after leaving ground
-const JUMP_BUFFER = 6; // Frames to buffer jump input
+const BASE_JUMP_VELOCITY = -5.8;
+const SPEED_JUMP_BONUS = -1.5;
+const JUMP_CUT_MULTIPLIER = 0.4;
+const COYOTE_TIME = 8;
+const JUMP_BUFFER = 6;
+
+// Combat constants
+const ATTACK_DURATION = 6;
+const ATTACK_COOLDOWN = 14;
+const ATTACK_RANGE = 12; // Adjusted range
+const ATTACK_BOUNCE = 0.5;
+const SPIKE_ATTACK_BOUNCE = 0.5;
+const SPIKE_PERFECT_BONUS = 0.25;
+const ATTACK_LUNGE_SPEED = 1.9;
+const ATTACK_LUNGE_DOWN_SPEED = 1.3;
+const ATTACK_LUNGE_DECAY = 0.86;
+const DYNAMIC_BOUNCE_BONUS = 0.4;
 
 // Wall jump constants
-const WALL_SLIDE_SPEED = 3;
-const WALL_JUMP_VELOCITY_X = 6;
-const WALL_JUMP_VELOCITY_Y = -11;
+const WALL_SLIDE_SPEED = 1.5;
+const WALL_JUMP_VELOCITY_X = 3.5;
+const WALL_JUMP_VELOCITY_Y = -5.8;
 const WALL_COYOTE_TIME = 6; // Frames of grace after leaving wall
 const WALL_STICK_FRAMES = 3; // Brief stick to wall before sliding
 
-// Combat constants
-const STOMP_THRESHOLD = 10;
-const STOMP_BOUNCE = 0.5;
-
 // Death animation constants
-const DEATH_DURATION = 90;
-const DEATH_RISE_DURATION = 30;
-const DEATH_SPIN_SPEED = 4;
+const DEATH_DURATION = 60;
+const DEATH_PAUSE_DURATION = 10;
+const DEATH_RISE_DURATION = 3;
+const DEATH_SPIN_SPEED = 0;
 
 const game = {
   canvas: null,
@@ -44,13 +71,14 @@ const game = {
   levelWidth: 0,
   levelHeight: 0,
   tiles: {},
+  levelData: null,
   enemies: [],
   spawn: { x: 32, y: 32 },
   player: {
     x: 32,
     y: 32,
-    width: 24,
-    height: 30,
+    width: 16,
+    height: 16,
     velX: 0,
     velY: 0,
     onGround: false,
@@ -58,6 +86,9 @@ const game = {
     dead: false,
     deathTimer: 0,
     deathVelY: 0,
+    animFrame: 0,
+    animTimer: 0,
+    animState: 'idle',
     // Coyote time and jump buffer
     coyoteTimer: 0,
     jumpBufferTimer: 0,
@@ -69,16 +100,28 @@ const game = {
     canWallJumpLeft: true,
     canWallJumpRight: true,
     wallStickTimer: 0,
+    wasPressingWallLeft: false,
+    wasPressingWallRight: false,
     // Variable jump
     isJumping: false,
-    jumpHeld: false
+    jumpHeld: false,
+    // Attack state
+    facing: 1,
+    attackTimer: 0,
+    attackCooldown: 0,
+    attackDir: { x: 1, y: 0 },
+    attackLungeVelX: 0,
+    attackLungeVelY: 0
   },
   keys: {
     left: false,
     right: false,
+    up: false,
+    down: false,
     jump: false,
     jumpPressed: false, // For detecting new jump press
-    run: false
+    attack: false,
+    attackPressed: false
   },
   camera: {
     x: 0,
@@ -90,12 +133,52 @@ const game = {
     currentTime: 0,
     finalTime: 0
   },
-  levelCompleted: false
+  levelCompleted: false,
+  assets: {
+    playerWalk: null,
+    playerJump: null,
+    playerWallSlide: null,
+    playerDie: null,
+    playerIdle: null,
+    spike: null,
+    enemyWalk: null,
+    tilesheet: null,
+  }
 };
+
+function loadAssets() {
+  return Promise.all([
+    loadImage('graphics/player_walk.png').then(img => game.assets.playerWalk = img),
+    loadImage('graphics/player_jump.png').then(img => game.assets.playerJump = img),
+    loadImage('graphics/player_wall_slide.png').then(img => game.assets.playerWallSlide = img),
+    loadImage('graphics/player_die.png').then(img => game.assets.playerDie = img),
+    loadImage('graphics/player_idle.png').then(img => game.assets.playerIdle = img),
+    loadImage('graphics/spike.png').then(img => game.assets.spike = img),
+    loadImage('graphics/enemy1_walk.png').then(img => game.assets.enemyWalk = img),
+    loadImage('graphics/tilesheet_1.png').then(img => {
+      game.assets.tilesheet = img;
+    }),
+  ]);
+}
+
+function loadImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => resolve(img);
+    img.onerror = () => {
+      console.warn(`Failed to load ${src}`);
+      resolve(null);
+    };
+  });
+}
 
 function initGame() {
   game.canvas = document.getElementById('gameCanvas');
   game.ctx = game.canvas.getContext('2d');
+
+  // Disable image smoothing for pixel art
+  game.ctx.imageSmoothingEnabled = false;
 
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
@@ -103,41 +186,68 @@ function initGame() {
   setupControls();
   setupBackButton();
 
-  loadLevelFromSource().then((loaded) => {
-    if (!loaded) {
-      showError('Unable to load level.');
-      return;
-    }
-    requestAnimationFrame(gameLoop);
+  loadAssets().then(() => {
+    loadLevelFromSource().then((loaded) => {
+      if (!loaded) {
+        showError('Unable to load level.');
+        return;
+      }
+      requestAnimationFrame(gameLoop);
+    });
   });
 }
 
 function resizeCanvas() {
   const container = document.querySelector('.game-container');
-  game.canvas.width = container.clientWidth;
-  game.canvas.height = container.clientHeight;
+  // Set consistent vertical viewing area (e.g. 15 tiles height)
+  // This scales the rendered area consistently regardless of window size
+  // 15 tiles * 16px = 240px
+  const TARGET_HEIGHT = 240; 
+  const aspect = container.clientWidth / container.clientHeight;
+
+  game.canvas.height = TARGET_HEIGHT;
+  game.canvas.width = Math.ceil(TARGET_HEIGHT * aspect);
+
   game.width = game.canvas.width;
   game.height = game.canvas.height;
+  
+  // Re-disable smoothing after resize
+  if (game.ctx) game.ctx.imageSmoothingEnabled = false;
 }
 
 function setupControls() {
   window.addEventListener('keydown', (e) => {
     if (e.code === 'ArrowLeft') game.keys.left = true;
     if (e.code === 'ArrowRight') game.keys.right = true;
-    if (e.code === 'KeyX') {
+    if (e.code === 'ArrowUp') {
+      game.keys.up = true;
       if (!game.keys.jump) {
         game.keys.jumpPressed = true; // New press
       }
       game.keys.jump = true;
     }
-    if (e.code === 'KeyZ') game.keys.run = true;
+    if (e.code === 'ArrowDown') game.keys.down = true;
+    
+    // Space for attack
+    if (e.code === 'Space') {
+      if (!game.keys.attack) {
+        game.keys.attackPressed = true; // New attack press
+      }
+      game.keys.attack = true;
+      // Prevent scrolling
+      e.preventDefault(); 
+    }
   });
 
   window.addEventListener('keyup', (e) => {
     if (e.code === 'ArrowLeft') game.keys.left = false;
     if (e.code === 'ArrowRight') game.keys.right = false;
-    if (e.code === 'KeyX') game.keys.jump = false;
-    if (e.code === 'KeyZ') game.keys.run = false;
+    if (e.code === 'ArrowUp') {
+      game.keys.up = false;
+      game.keys.jump = false;
+    }
+    if (e.code === 'ArrowDown') game.keys.down = false;
+    if (e.code === 'Space') game.keys.attack = false;
   });
 }
 
@@ -146,6 +256,12 @@ function setupBackButton() {
   const urlParams = new URLSearchParams(window.location.search);
   const levelId = urlParams.get('id');
   const fromEditor = urlParams.get('from') === 'editor';
+  const source = urlParams.get('source');
+
+  // Only show the overlay button if testing from editor
+  if (fromEditor || source === 'session') {
+    backBtn.style.display = 'flex';
+  }
 
   backBtn.addEventListener('click', () => {
     if (fromEditor) {
@@ -196,9 +312,18 @@ async function loadLevelFromSource() {
 
 function applyLevelData(level) {
   const titleEl = document.getElementById('gameTitle');
-  titleEl.textContent = level.title || 'Level';
+  if (titleEl) {
+    titleEl.textContent = level.title || 'Level';
+  }
 
-  const levelData = level.level_data || {};
+  game.levelData = level.level_data || {};
+  resetLevelState();
+
+  resetPlayer();
+}
+
+function resetLevelState() {
+  const levelData = game.levelData || {};
   game.levelWidth = levelData.width || 50;
   game.levelHeight = levelData.height || 20;
   game.tiles = levelData.tiles || {};
@@ -219,26 +344,37 @@ function applyLevelData(level) {
       game.enemies.push({
         x: px,
         y: py,
-        width: 26,
-        height: 26,
+        width: TILE_SIZE,
+        height: TILE_SIZE,
         velX: 1.2,
+        velY: 0,
         direction: 1,
+        onGround: false,
         active: false
       });
     }
   });
-
-  resetPlayer();
 }
 
 function resetPlayer() {
-  game.player.x = game.spawn.x + 4;
-  game.player.y = game.spawn.y + 2;
+  game.player.x = game.spawn.x; // Spawn is top-left
+  game.player.y = game.spawn.y;
   game.player.velX = 0;
   game.player.velY = 0;
   game.player.onGround = false;
   game.player.wasOnGround = false;
   game.player.dead = false;
+
+  // Clear all inputs on respawn
+  game.keys.left = false;
+  game.keys.right = false;
+  game.keys.up = false;
+  game.keys.down = false;
+  game.keys.jump = false;
+  game.keys.jumpPressed = false;
+  game.keys.attack = false;
+  game.keys.attackPressed = false;
+
   game.player.deathTimer = 0;
   game.player.deathVelY = 0;
   
@@ -254,10 +390,18 @@ function resetPlayer() {
   game.player.canWallJumpLeft = true;
   game.player.canWallJumpRight = true;
   game.player.wallStickTimer = 0;
+  game.player.wasPressingWallLeft = false;
+  game.player.wasPressingWallRight = false;
   
   // Reset variable jump state
   game.player.isJumping = false;
   game.player.jumpHeld = false;
+  game.player.facing = 1;
+  game.player.attackTimer = 0;
+  game.player.attackCooldown = 0;
+  game.player.attackDir = { x: 1, y: 0 };
+  game.player.attackLungeVelX = 0;
+  game.player.attackLungeVelY = 0;
   
   // Reset timer
   game.timer.started = false;
@@ -304,6 +448,7 @@ function update() {
   
   updatePlayer();
   updateEnemies();
+  handleAttack();
   checkPlayerHazards();
   checkGoalCollision();
   updateCamera();
@@ -311,7 +456,7 @@ function update() {
 
 function updatePlayer() {
   const player = game.player;
-  const maxSpeed = game.keys.run ? RUN_SPEED : WALK_SPEED;
+  const maxSpeed = PLAYER_SPEED;
 
   // Start timer on first input
   if (!game.timer.started && (game.keys.left || game.keys.right || game.keys.jump)) {
@@ -354,6 +499,10 @@ function updatePlayer() {
 
   // Handle wall sliding
   handleWallSlide(player);
+  
+  // Track wall press state for next frame's coyote logic
+  player.wasPressingWallLeft = game.keys.left && player.touchingWallLeft;
+  player.wasPressingWallRight = game.keys.right && player.touchingWallRight;
 
   // Apply gravity
   player.velY = Math.min(player.velY + GRAVITY, MAX_FALL_SPEED);
@@ -418,11 +567,12 @@ function detectWalls(player) {
   player.touchingWallRight = isWallAtX(rightCheckX, topY, midY, bottomY);
 
   // Update wall coyote time
-  if (wasTouchingLeft && !player.touchingWallLeft && !player.onGround) {
+  // ONLY grant coyote time if we were actively pressing against the wall (sliding)
+  if (wasTouchingLeft && !player.touchingWallLeft && !player.onGround && player.wasPressingWallLeft) {
     player.wallCoyoteTimer = WALL_COYOTE_TIME;
     player.wallCoyoteDirection = -1;
   }
-  if (wasTouchingRight && !player.touchingWallRight && !player.onGround) {
+  if (wasTouchingRight && !player.touchingWallRight && !player.onGround && player.wasPressingWallRight) {
     player.wallCoyoteTimer = WALL_COYOTE_TIME;
     player.wallCoyoteDirection = 1;
   }
@@ -446,6 +596,7 @@ function updateHorizontalMovement(player, maxSpeed) {
   if (game.keys.right) inputDir = 1;
 
   if (inputDir !== 0) {
+    player.facing = inputDir;
     const turning = isPlayerTurning(inputDir, player.velX);
     const accel = turning ? acceleration * TURN_MULTIPLIER : acceleration;
 
@@ -460,6 +611,118 @@ function updateHorizontalMovement(player, maxSpeed) {
     player.velX *= friction;
     if (Math.abs(player.velX) < 0.1) {
       player.velX = 0;
+    }
+  }
+}
+
+function getAttackBox(player) {
+  const padding = 4;
+  if (player.attackDir.y !== 0) {
+    return {
+      x: player.x + padding,
+      y: player.attackDir.y > 0 ? player.y + player.height : player.y - ATTACK_RANGE,
+      width: player.width - padding * 2,
+      height: ATTACK_RANGE
+    };
+  }
+
+  return {
+    x: player.attackDir.x > 0 ? player.x + player.width : player.x - ATTACK_RANGE,
+    y: player.y + padding,
+    width: ATTACK_RANGE,
+    height: player.height - padding * 2
+  };
+}
+
+function handleAttack() {
+  const player = game.player;
+
+  if (player.attackCooldown > 0) player.attackCooldown--;
+  if (player.attackTimer > 0) player.attackTimer--;
+
+  if (game.keys.attackPressed && player.attackCooldown === 0) {
+    let dirX = 0;
+    let dirY = 0;
+
+    if (game.keys.up) {
+      dirY = -1;
+    } else if (game.keys.down) {
+      dirY = 1;
+    } else if (game.keys.left) {
+      dirX = -1;
+    } else if (game.keys.right) {
+      dirX = 1;
+    } else {
+      dirX = player.facing || 1;
+    }
+
+    player.attackDir = { x: dirX, y: dirY };
+    player.attackTimer = ATTACK_DURATION;
+    player.attackCooldown = ATTACK_COOLDOWN;
+
+    if (dirY > 0) {
+      if (!player.onGround) player.velY = ATTACK_LUNGE_DOWN_SPEED; // Override velocity
+    } else if (dirY === 0) {
+      player.velX = ATTACK_LUNGE_SPEED * dirX; // Set velocity directly for consistency
+    }
+  }
+  game.keys.attackPressed = false;
+
+  if (player.attackTimer <= 0) return;
+
+  const hurtbox = getHurtbox(player);
+
+  for (let i = game.enemies.length - 1; i >= 0; i--) {
+    const enemy = game.enemies[i];
+    if (!rectsIntersect(hurtbox, enemy)) continue;
+
+    game.enemies.splice(i, 1);
+
+    if (player.attackDir.y > 0 && player.y + player.height <= enemy.y + enemy.height * 0.6) {
+      // Calculate bounce based on distance (Tip of sword = higher bounce)
+      // enemy.y - hurtbox.y is approx 0 for deep hit, 32 for max tip hit
+      const dist = enemy.y - hurtbox.y; 
+      
+      // REQUIREMENT: Only bounce if hitting with the edge (bottom 40%)
+      if (dist > hurtbox.height * 0.60) {
+        const ratio = Math.max(0, Math.min(1, dist / (hurtbox.height * 0.8)));
+
+        player.velY = BASE_JUMP_VELOCITY * (ATTACK_BOUNCE + (DYNAMIC_BOUNCE_BONUS * ratio));
+        player.onGround = false;
+        player.isJumping = false; 
+      }
+    }
+  }
+
+  if (player.attackDir.y > 0) {
+    const nearbyTiles = getCollidingTiles(hurtbox, true);
+    // Find the lowest spiked tile we are hitting (furthest away)
+    let maxDist = -Infinity;
+    let hitSpike = false;
+
+    nearbyTiles.forEach(tile => {
+      if (tile.type === 'spike' && rectsIntersect(hurtbox, tile)) {
+        hitSpike = true;
+        const d = tile.y - hurtbox.y;
+        if (d > maxDist) maxDist = d;
+      }
+    });
+
+    if (hitSpike) {
+       // Deep hit (close to player) -> Small bounce
+       // Tip hit (far from player) -> Big bounce
+       
+       // REQUIREMENT: Only bounce if hitting with the edge (bottom 40%)
+       if (maxDist > hurtbox.height * 0.60) {
+          const ratio = Math.max(0, Math.min(1, maxDist / (hurtbox.height * 0.8)));
+          
+          // If the ratio is very high (perfect spacing), add the extra bonus
+          const extra = ratio > 0.9 ? SPIKE_PERFECT_BONUS : 0;
+          
+          player.velY = BASE_JUMP_VELOCITY * (SPIKE_ATTACK_BOUNCE + (DYNAMIC_BOUNCE_BONUS * ratio) + extra);
+          player.onGround = false;
+          player.isJumping = false;
+       }
     }
   }
 }
@@ -503,7 +766,7 @@ function handleJumping(player, maxSpeed) {
 
 function performGroundJump(player, maxSpeed) {
   // Calculate speed-based jump bonus
-  const speedRatio = Math.abs(player.velX) / RUN_SPEED;
+  const speedRatio = Math.abs(player.velX) / PLAYER_SPEED;
   const jumpBonus = SPEED_JUMP_BONUS * speedRatio;
 
   player.velY = BASE_JUMP_VELOCITY + jumpBonus;
@@ -538,7 +801,10 @@ function tryWallJump(player) {
 }
 
 function handleWallSlide(player) {
-  if (player.onGround) return;
+  if (player.onGround) {
+    player.wallStickTimer = 0;
+    return;
+  }
   
   if (isPlayerSlidingOnWall(player) && player.velY > 0) {
     // Apply wall stick for a brief moment
@@ -551,6 +817,8 @@ function handleWallSlide(player) {
         player.velY = WALL_SLIDE_SPEED;
       }
     }
+  } else {
+    player.wallStickTimer = 0;
   }
 }
 
@@ -627,20 +895,41 @@ function updateEnemies() {
     }
     if (!enemy.active) return;
 
+    enemy.onGround = false;
+    enemy.velY = Math.min(enemy.velY + GRAVITY, MAX_FALL_SPEED);
+
+    // Horizontal movement
     enemy.x += enemy.velX * enemy.direction;
 
-    const enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
-    const collisions = getCollidingTiles(enemyBox).filter((tile) => isSolidTile(tile.type));
-    if (collisions.length) {
+    let enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+    const collisionsX = getCollidingTiles(enemyBox).filter((tile) => isSolidTile(tile.type));
+    if (collisionsX.length) {
       enemy.direction *= -1;
       enemy.x += enemy.velX * enemy.direction;
-      return;
     }
 
-    const frontX = enemy.direction > 0 ? enemy.x + enemy.width : enemy.x - 1;
-    const footY = enemy.y + enemy.height + 1;
-    if (!isSolidAt(frontX, footY)) {
-      enemy.direction *= -1;
+    // Vertical movement
+    enemy.y += enemy.velY;
+    enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+    const collisionsY = getCollidingTiles(enemyBox).filter((tile) => isSolidTile(tile.type));
+    collisionsY.forEach((tile) => {
+      if (enemy.velY > 0) {
+        enemy.y = tile.y - enemy.height;
+        enemy.velY = 0;
+        enemy.onGround = true;
+      } else if (enemy.velY < 0) {
+        enemy.y = tile.y + TILE_SIZE;
+        enemy.velY = 0;
+      }
+    });
+
+    // Edge detection (only when grounded)
+    if (enemy.onGround) {
+      const frontX = enemy.direction > 0 ? enemy.x + enemy.width : enemy.x - 1;
+      const footY = enemy.y + enemy.height + 1;
+      if (!isSolidAt(frontX, footY)) {
+        enemy.direction *= -1;
+      }
     }
   });
 }
@@ -650,8 +939,12 @@ function updateDeathAnimation() {
   
   player.deathTimer++;
   
-  if (player.deathTimer <= DEATH_RISE_DURATION) {
-    // Rise up phase
+  if (player.deathTimer <= DEATH_PAUSE_DURATION) {
+    // Pause phase - freeze in place
+    player.velX = 0;
+    player.velY = 0;
+  } else if (player.deathTimer <= DEATH_PAUSE_DURATION + DEATH_RISE_DURATION) {
+    // Rise up phase (Quick Pop)
     player.deathVelY = -8;
     player.y += player.deathVelY;
   } else {
@@ -662,6 +955,7 @@ function updateDeathAnimation() {
   
   // Reset after animation completes
   if (player.deathTimer >= DEATH_DURATION) {
+    resetLevelState();
     resetPlayer();
   }
 }
@@ -684,25 +978,12 @@ function checkPlayerHazards() {
     return;
   }
 
-  // Check enemy collisions with stomping
+  // Check enemy collisions (no stomp mechanic)
   for (let i = game.enemies.length - 1; i >= 0; i--) {
     const enemy = game.enemies[i];
     if (!rectsIntersect(player, enemy)) continue;
-    
-    // Check if player is stomping (coming from above)
-    const isStomping = player.velY > 0 && 
-                       player.y + player.height - STOMP_THRESHOLD < enemy.y + enemy.height / 2;
-    
-    if (isStomping) {
-      // Kill enemy and bounce player
-      game.enemies.splice(i, 1);
-      player.velY = BASE_JUMP_VELOCITY * STOMP_BOUNCE; // Bounce based on constant
-      player.onGround = false;
-    } else {
-      // Hit enemy from side - die
-      killPlayer();
-      return;
-    }
+    killPlayer();
+    return;
   }
 }
 
@@ -712,9 +993,16 @@ function killPlayer() {
   game.player.deathVelY = 0;
   game.player.velX = 0;
   game.player.velY = 0;
+  
+  // Clear attack state
+  game.player.attackTimer = 0;
+  game.player.attackCooldown = 0;
 }
 
 function updateCamera() {
+  // Don't update camera if dead
+  if (game.player.dead) return;
+
   const maxX = Math.max(0, game.levelWidth * TILE_SIZE - game.width);
   const maxY = Math.max(0, game.levelHeight * TILE_SIZE - game.height);
 
@@ -732,59 +1020,271 @@ function render() {
   renderTiles();
   renderEnemies();
   renderPlayer();
+  renderHurtbox();
   renderTimer();
   // Grid removed
 }
 
+function getHurtbox(player) {
+  const size = TILE_SIZE;
+  const baseX = player.x + player.width / 2 - size / 2;
+  const baseY = player.y + player.height / 2 - size / 2;
+
+  return {
+    x: baseX + player.attackDir.x * size,
+    y: baseY + player.attackDir.y * size,
+    width: size,
+    height: size
+  };
+}
+
+function renderHurtbox() {
+  if (game.player.attackTimer <= 0) return;
+  const ctx = game.ctx;
+  const hurtbox = getHurtbox(game.player);
+  const screenX = hurtbox.x - game.camera.x;
+  const screenY = hurtbox.y - game.camera.y;
+
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(screenX, screenY, hurtbox.width, hurtbox.height);
+  ctx.restore();
+}
+
+function getIntersectionMask(x, y) {
+  // For the intersection point at grid position (x, y),
+  // check which of the 4 tiles sharing this corner are solid.
+  // Returns a 4-bit mask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
+  let mask = 0;
+  const tl = isSolidTile(x,     y);
+  const tr = isSolidTile(x+1,  y);
+  const bl = isSolidTile(x,   y+1);
+  const br = isSolidTile(x+1, y+1);
+  if (tl) mask |= 1;
+  if (tr) mask |= 2;
+  if (bl) mask |= 4;
+  if (br) mask |= 8;
+  return mask;
+}
+
+function isSolidTile(x, y) {
+  const key = `${x},${y}`;
+  if (typeof window !== 'undefined' && window._autotileSolidKeysLog) {
+    window._autotileSolidKeysLog(key);
+  }
+  const t = game.tiles[key];
+  return t === 'ground' || t === 'tile';
+}
+
 function renderTiles() {
   const ctx = game.ctx;
-  const startX = Math.max(0, Math.floor(game.camera.x / TILE_SIZE));
-  const startY = Math.max(0, Math.floor(game.camera.y / TILE_SIZE));
-  const endX = Math.min(game.levelWidth, Math.ceil((game.camera.x + game.width) / TILE_SIZE));
-  const endY = Math.min(game.levelHeight, Math.ceil((game.camera.y + game.height) / TILE_SIZE));
+  
+  // Calculate visible tile range
+  const startX = Math.floor(game.camera.x / TILE_SIZE) - 1;
+  const startY = Math.floor(game.camera.y / TILE_SIZE) - 1;
+  const endX = Math.ceil((game.camera.x + game.width) / TILE_SIZE) + 1;
+  const endY = Math.ceil((game.camera.y + game.height) / TILE_SIZE) + 1;
 
+  const tilesheet = game.assets.tilesheet;
+  const useTilesheet = tilesheet && tilesheet.width > 0;
+
+  // First pass: render non-ground tiles (spikes, goals, etc.)
   for (let y = startY; y < endY; y++) {
     for (let x = startX; x < endX; x++) {
-      const key = `${x},${y}`;
-      const type = game.tiles[key];
-      // Skip spawn and enemy (enemies are rendered separately)
-      if (!type || type === 'spawn' || type === 'enemy') continue;
-
+      const type = game.tiles[`${x},${y}`];
+      if (!type) continue;
+      
       const screenX = x * TILE_SIZE - game.camera.x;
       const screenY = y * TILE_SIZE - game.camera.y;
+      
+      if (type === 'spike' && game.assets.spike) {
+        drawTile(ctx, type, screenX, screenY, TILE_SIZE, 0, 0, game.assets.spike);
+      } else if (type === 'goal' || type === 'coin' || type === 'diamond') {
+        drawTile(ctx, type, screenX, screenY, TILE_SIZE);
+      }
+    }
+  }
 
-      drawTile(ctx, type, screenX, screenY, TILE_SIZE);
+  // Second pass: render ground tiles with autotiling
+  // Iterate over all tiles in game.tiles instead of the full grid
+  for (const key of Object.keys(game.tiles)) {
+    const type = game.tiles[key];
+    if (type !== 'ground' && type !== 'tile') continue;
+
+    const [x, y] = key.split(',').map(Number);
+    const screenX = x * TILE_SIZE - game.camera.x;
+    const screenY = y * TILE_SIZE - game.camera.y;
+
+    // Skip if off-screen
+    if (screenX < -TILE_SIZE || screenX > game.width ||
+        screenY < -TILE_SIZE || screenY > game.height) continue;
+
+    // DEBUG: Draw a red rectangle for every ground/tile tile
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+    ctx.restore();
+
+    // DEBUG: Draw intersection points for this tile
+    const intersectionPoints = [
+      [0, 0, '#00ffff'], // TL
+      [1, 0, '#ff00ff'], // TR
+      [0, 1, '#ffff00'], // BL
+      [1, 1, '#00ff00']  // BR
+    ];
+    for (const [dx, dy, color] of intersectionPoints) {
+      ctx.save();
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(screenX + dx * TILE_SIZE, screenY + dy * TILE_SIZE, 2, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    if (useTilesheet) {
+      // Calculate masks for each corner of this tile
+      const maskTL = getIntersectionMask(x, y);
+      const maskTR = getIntersectionMask(x + 1, y);
+      const maskBL = getIntersectionMask(x, y + 1);
+      const maskBR = getIntersectionMask(x + 1, y + 1);
+
+
+      // Draw 4 sub-tiles (8x8 each) for this tile
+      drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);
+      drawAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);
+      drawAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);
+      drawAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);
+    } else {
+      // Fallback: simple brown rectangle
+      ctx.fillStyle = '#8b4513';
+      ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
   }
 }
 
+// Draw a single 8x8 quadrant from the autotile sheet
+function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
+  if (mask === 0) return;
+
+  // The tilesheet is 64x64 with 16 tiles arranged in 4x4 grid
+  // Each tile is 16x16, we extract 8x8 quadrants
+  // mask (0-15) directly indexes which tile to use
+  const tileCol = mask % 4;
+  const tileRow = Math.floor(mask / 4);
+  const tileX = tileCol * 16;
+  const tileY = tileRow * 16;
+
+  // quadrant determines which 8x8 portion: 0=TL, 1=TR, 2=BL, 3=BR
+  const qx = (quadrant % 2) * 8;
+  const qy = Math.floor(quadrant / 2) * 8;
+
+  ctx.drawImage(tilesheet, tileX + qx, tileY + qy, 8, 8, destX, destY, 8, 8);
+}
+
+// Fallback when no tilesheet is available
+function drawFallbackQuadrant(ctx, mask, destX, destY) {
+  if (mask === 0) return;
+  ctx.fillStyle = '#8b4513'; // Brown for ground
+  ctx.fillRect(destX, destY, 8, 8);
+}
+
 function renderEnemies() {
   const ctx = game.ctx;
+  const frameRate = 12; // Animation speed for enemies
+
   game.enemies.forEach((enemy) => {
-    const screenX = enemy.x - game.camera.x;
-    const screenY = enemy.y - game.camera.y;
-    // Draw enemy using shared graphics
-    // Adjust position if needed, but for now drawing at top-left of hitbox
-    drawTile(ctx, 'enemy', screenX, screenY, TILE_SIZE);
+    // Only animate if active/close
+    if (!enemy.active) return;
+    
+    // Use game timer as animation clock for all enemies to stay in sync (or give them individual timers if preferred)
+    // For now simple sync is fine
+    const frame = Math.floor(game.timer.currentTime / (1000/frameRate)) % 2; // Assuming 2 frames for walk
+    
+    const screenX = Math.round(enemy.x - game.camera.x);
+    const screenY = Math.round(enemy.y - game.camera.y);
+    
+    if (game.assets.enemyWalk) {
+        ctx.save();
+        ctx.translate(screenX + enemy.width/2, screenY + enemy.height/2);
+        
+        // Sprite likely faces RIGHT by default.
+        // If moving LEFT (-1), FLIP it.
+        if (enemy.direction < 0) ctx.scale(-1, 1);
+        
+        // Draw 16x16 sprite
+        // Offset by -8 to center
+        ctx.drawImage(game.assets.enemyWalk, frame * 16, 0, 16, 16, -8, -8, 16, 16);
+        ctx.restore();
+    } else {
+        // Fallback
+        drawTile(ctx, 'enemy', screenX, screenY, TILE_SIZE);
+    }
   });
 }
 
 function renderPlayer() {
   const ctx = game.ctx;
-  const screenX = game.player.x - game.camera.x;
-  const screenY = game.player.y - game.camera.y;
-  
-  if (game.player.dead) {
-    // Draw death animation - rotate player
+  const p = game.player;
+
+  // Update Animation Timer
+  p.animTimer++;
+
+  let sprite = game.assets.playerWalk;
+  let frame = 0;
+  let flip = p.facing === -1;
+  const frameRate = 10;
+
+  if (p.dead) {
+    sprite = game.assets.playerDie;
+  } else if ((!p.onGround && ((p.touchingWallLeft && game.keys.left) || (p.touchingWallRight && game.keys.right))) || 
+             p.wallStickTimer > 0 || 
+             (p.wallCoyoteTimer > 0 && p.velY > 0)) {
+     sprite = game.assets.playerWallSlide;
+     // Face towards the wall if sliding/clinging
+     if (p.touchingWallLeft || (p.wallCoyoteTimer > 0 && p.wallCoyoteDirection === -1)) flip = true;
+     if (p.touchingWallRight || (p.wallCoyoteTimer > 0 && p.wallCoyoteDirection === 1)) flip = false;
+  } else if (!p.onGround) {
+    sprite = game.assets.playerJump;
+    if (p.velY >= 0) frame = 1; // Fall
+    else frame = 0; // Jump
+  } else if (Math.abs(p.velX) > 0.1) {
+    sprite = game.assets.playerWalk;
+    // 3 frames loop
+    const runFrameRate = 5; // Faster animation
+    frame = Math.floor(p.animTimer / runFrameRate) % 3;
+  } else {
+    // Idle
+    sprite = game.assets.playerIdle;
+    const idleFrameRate = 40; // Slow animation
+    frame = Math.floor(p.animTimer / idleFrameRate) % 2; 
+  }
+
+  const screenX = Math.round(p.x - game.camera.x);
+  const screenY = Math.round(p.y - game.camera.y);
+
+  if (sprite) {
     ctx.save();
-    ctx.translate(screenX + game.player.width / 2, screenY + game.player.height / 2);
-    ctx.rotate((game.player.deathTimer / DEATH_DURATION) * Math.PI * DEATH_SPIN_SPEED); // Spin during death
-    ctx.fillStyle = '#212121';
-    ctx.fillRect(-game.player.width / 2, -game.player.height / 2, game.player.width, game.player.height);
+    
+    // Draw relative to player center (16x16 hitbox vs 16x16 sprite)
+    // Center the sprite on the hitbox center.
+    const cx = Math.floor(screenX + p.width / 2);
+    const cy = Math.floor(screenY + p.height / 2);
+    
+    ctx.translate(cx, cy);
+    if (flip) ctx.scale(-1, 1);
+    
+    // Draw centered 16x16 sprite
+    // Offset by -8 to center 16px sprite on 0,0
+    ctx.drawImage(sprite, frame * 16, 0, 16, 16, -8, -8, 16, 16);
+    
     ctx.restore();
   } else {
+    // Fallback if assets not loaded
     ctx.fillStyle = '#212121';
-    ctx.fillRect(screenX, screenY, game.player.width, game.player.height);
+    ctx.fillRect(screenX, screenY, p.width, p.height);
   }
 }
 
@@ -850,11 +1350,12 @@ function renderTimer() {
   const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
   
   ctx.save();
-  ctx.font = 'bold 24px Roboto, sans-serif';
+  ctx.font = 'bold 12px Roboto, sans-serif'; // Reduced font size
+  ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  ctx.fillText(timeString, 12, 32);
+  ctx.fillText(timeString, game.width / 2 + 1, 16); // Shadow position
   ctx.fillStyle = '#ffffff';
-  ctx.fillText(timeString, 10, 30);
+  ctx.fillText(timeString, game.width / 2, 16); // Text position (same Y as shadow base, skewed X)
   ctx.restore();
 }
 

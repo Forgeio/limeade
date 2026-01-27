@@ -1,0 +1,39 @@
+/* Play page overrides */
+
+.game-container {
+  position: relative;
+}
+
+.overlay-back-btn {
+  position: absolute;
+  top: 32px;
+  left: 32px;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.35);
+  color: #ffffff;
+  border: none;
+  border-radius: 4px;
+  padding: 10px 18px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  backdrop-filter: blur(4px);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+
+.overlay-back-btn:hover {
+  background: rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-md);
+}
+
+.overlay-back-btn svg {
+  fill: currentColor;
+  width: 20px;
+  height: 20px;
+}

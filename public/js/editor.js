@@ -16,7 +16,7 @@ const editor = {
   ctx: null,
   gridWidth: 50,
   gridHeight: 20,
-  tileSize: 32,
+  tileSize: 16,
   cameraX: 0,
   cameraY: 0,
   velX: 0,
@@ -1009,15 +1009,16 @@ function applyResize() {
 function testLevel() {
   const params = new URLSearchParams();
 
+  // Always save current level data to session for testing
+  sessionStorage.setItem('testLevelData', JSON.stringify({
+    width: editor.gridWidth,
+    height: editor.gridHeight,
+    tiles: editor.levelData
+  }));
+  params.set('source', 'session');
+
   if (editor.levelId) {
     params.set('id', editor.levelId);
-  } else {
-    sessionStorage.setItem('testLevelData', JSON.stringify({
-      width: editor.gridWidth,
-      height: editor.gridHeight,
-      tiles: editor.levelData
-    }));
-    params.set('source', 'session');
   }
 
   params.set('from', 'editor');

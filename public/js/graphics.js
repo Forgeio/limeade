@@ -63,7 +63,14 @@ function getTileNeighbors(x, y, tiles) {
 //   size: Tile size in pixels
 //   variant: (optional) Tile variant for autotiling (default: 0)
 //   frame: (optional) Animation frame (default: 0)
-function drawTile(ctx, type, x, y, size, variant = 0, frame = 0) {
+function drawTile(ctx, type, x, y, size, variant = 0, frame = 0, image = null) {
+  // If an image is provided, use it directly (centered or scaled)
+  if (image) {
+      // Draw 16x16 sprite scaled to target size
+      ctx.drawImage(image, 0, 0, 16, 16, x, y, size, size);
+      return;
+  }
+
   // Future: If spritesheet is loaded, draw from spritesheet
   // if (SPRITESHEET_CONFIG.loaded) {
   //   drawFromSpritesheet(ctx, type, x, y, size, variant, frame);
