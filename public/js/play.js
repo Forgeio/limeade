@@ -1076,7 +1076,7 @@ function getIntersectionMask(x, y) {
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {Image} tilesheet - 64x64 tilesheet with 4x4 grid of 16x16 tiles
  * @param {number} mask - 4-bit mask (0-15) from intersection check
- * @param {number} quadrant - Which 8x8 quadrant (0=TL, 1=TR, 2=BL, 3=BR)
+ * @param {number} quadrant - Which 8x8 quadrant to extract (0-3, tilesheet-specific mapping)
  * @param {number} destX - Destination X on screen
  * @param {number} destY - Destination Y on screen
  */
@@ -1090,7 +1090,7 @@ function drawDualGridQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   const tileY = tileRow * 16;
   
   // Extract the appropriate 8x8 quadrant from the 16x16 source tile
-  // quadrant: 0=TL, 1=TR, 2=BL, 3=BR
+  // Quadrant numbering matches tilesheet layout: 0=TL, 1=TR, 2=BL, 3=BR
   const quadX = (quadrant % 2) * 8;
   const quadY = Math.floor(quadrant / 2) * 8;
   
@@ -1152,10 +1152,11 @@ function renderTiles() {
       const maskBR = getIntersectionMask(x + 1, y + 1);  // Bottom-right corner
       
       // Draw 4 quadrants (8x8 each) to compose the full 16x16 tile
-      drawDualGridQuadrant(ctx, tilesheet, maskTL, 0, screenX,     screenY);      // TL quadrant
-      drawDualGridQuadrant(ctx, tilesheet, maskTR, 1, screenX + 8, screenY);      // TR quadrant
-      drawDualGridQuadrant(ctx, tilesheet, maskBL, 2, screenX,     screenY + 8);  // BL quadrant
-      drawDualGridQuadrant(ctx, tilesheet, maskBR, 3, screenX + 8, screenY + 8);  // BR quadrant
+      // Note: quadrant numbers are mapped specifically to match tilesheet layout
+      drawDualGridQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);      // TL quadrant
+      drawDualGridQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);      // TR quadrant
+      drawDualGridQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);  // BL quadrant
+      drawDualGridQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);  // BR quadrant
     } else {
       // Fallback when tilesheet is not loaded
       ctx.fillStyle = '#8b4513';
