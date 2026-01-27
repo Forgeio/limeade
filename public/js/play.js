@@ -1154,9 +1154,9 @@ function renderTiles() {
       const maskBL = getIntersectionMask(x,     y + 1);  // Bottom-left corner
       const maskBR = getIntersectionMask(x + 1, y + 1);  // Bottom-right corner
       
-      // Check if this is an isolated tile (all masks are just this tile)
-      // For an isolated tile, all 4 masks will have only 1 bit set
-      const isIsolated = (maskTL === 1 && maskTR === 1 && maskBL === 1 && maskBR === 1);
+      // Check if this is an isolated tile
+      // An isolated tile will have maskTL=1 (only current tile) and all others=0
+      const isIsolated = (maskTL === 1 && maskTR === 0 && maskBL === 0 && maskBR === 0);
       
       if (isIsolated) {
         // For isolated tiles, use fallback rendering
