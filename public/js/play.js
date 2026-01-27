@@ -1,22 +1,3 @@
-    // One-time debug: log a sample of game.tiles keys and isSolidTile keys checked (after game is defined)
-    if (typeof window !== 'undefined' && !window._autotileDebugLogged) {
-      window._autotileDebugLogged = true;
-      setTimeout(() => {
-        const allKeys = Object.keys(game.tiles);
-        console.log('[DEBUG] Sample of game.tiles keys:', allKeys.slice(0, 20));
-        window._autotileSolidKeys = [];
-        window._autotileSolidKeysLog = function(key) {
-          if (window._autotileSolidKeys.length < 20 && !window._autotileSolidKeys.includes(key)) {
-            window._autotileSolidKeys.push(key);
-          }
-        };
-        setTimeout(() => {
-          console.log('[DEBUG] Sample of isSolidTile keys checked:', window._autotileSolidKeys);
-        }, 2000);
-      }, 0);
-    }
-  // One-time debug: log all tile keys at first render (after game is defined)
-  // Debug output removed for clean console
 const TILE_SIZE = 16;
 
 // Physics constants (Scaled for 16px tiles)
@@ -1052,35 +1033,51 @@ function renderHurtbox() {
   ctx.restore();
 }
 
+/**
+ * Calculate the autotile mask for a grid intersection point.
+ * In the dual-grid autotiling system, each intersection point is shared by 4 tiles.
+ * This function checks which of those 4 tiles are solid and returns a 4-bit mask.
+ * 
+ * @param {number} x - Grid X coordinate of the intersection point
+ * @param {number} y - Grid Y coordinate of the intersection point
+ * @returns {number} 4-bit mask where bit0=top-left, bit1=top-right, bit2=bottom-left, bit3=bottom-right
+ */
 function getIntersectionMask(x, y) {
-  // For the intersection point at grid position (x, y),
-  // check which of the 4 tiles sharing this corner are solid.
-  // Returns a 4-bit mask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
+  // Check the 4 tiles that share this corner intersection point
+  // TL = top-left tile (x-1, y-1), TR = top-right (x, y-1), etc.
   let mask = 0;
-  const tl = isSolidTile(x,     y);
-  const tr = isSolidTile(x+1,  y);
-  const bl = isSolidTile(x,   y+1);
-  const br = isSolidTile(x+1, y+1);
-  if (tl) mask |= 1;
-  if (tr) mask |= 2;
-  if (bl) mask |= 4;
-  if (br) mask |= 8;
-  return mask;
+  const tl = isSolidTile(x,     y);     // Top-left tile
+  const tr = isSolidTile(x + 1, y);     // Top-right tile
+  const bl = isSolidTile(x,     y + 1); // Bottom-left tile
+  const br = isSolidTile(x + 1, y + 1); // Bottom-right tile
+  
+  if (tl) mask |= 1;  // bit 0
+  if (tr) mask |= 2;  // bit 1
+  if (bl) mask |= 4;  // bit 2
+  if (br) mask |= 8;  // bit 3
+  
+  return mask; // Returns 0-15
 }
 
 function isSolidTile(x, y) {
   const key = `${x},${y}`;
-  if (typeof window !== 'undefined' && window._autotileSolidKeysLog) {
-    window._autotileSolidKeysLog(key);
-  }
   const t = game.tiles[key];
   return t === 'ground' || t === 'tile';
 }
 
+/**
+ * Render all tiles in the level using dual-grid autotiling.
+ * 
+ * The autotiling system works by:
+ * 1. Each 16x16 tile is split into four 8x8 quadrants
+ * 2. Each quadrant's appearance is determined by checking the intersection point
+ * 3. The intersection mask (0-15) indexes into the 4x4 tilesheet
+ * 4. This creates smooth tile transitions based on neighboring tiles
+ */
 function renderTiles() {
   const ctx = game.ctx;
   
-  // Calculate visible tile range
+  // Calculate visible tile range with 1-tile buffer for smooth scrolling
   const startX = Math.floor(game.camera.x / TILE_SIZE) - 1;
   const startY = Math.floor(game.camera.y / TILE_SIZE) - 1;
   const endX = Math.ceil((game.camera.x + game.width) / TILE_SIZE) + 1;
@@ -1089,7 +1086,7 @@ function renderTiles() {
   const tilesheet = game.assets.tilesheet;
   const useTilesheet = tilesheet && tilesheet.width > 0;
 
-  // First pass: render non-ground tiles (spikes, goals, etc.)
+  // First pass: render non-ground tiles (spikes, goals, coins, etc.)
   for (let y = startY; y < endY; y++) {
     for (let x = startX; x < endX; x++) {
       const type = game.tiles[`${x},${y}`];
@@ -1106,8 +1103,8 @@ function renderTiles() {
     }
   }
 
-  // Second pass: render ground tiles with autotiling
-  // Iterate over all tiles in game.tiles instead of the full grid
+  // Second pass: render ground/tile blocks with autotiling
+  // We iterate over all tiles in game.tiles for efficiency (sparse grid)
   for (const key of Object.keys(game.tiles)) {
     const type = game.tiles[key];
     if (type !== 'ground' && type !== 'tile') continue;
@@ -1120,75 +1117,53 @@ function renderTiles() {
     if (screenX < -TILE_SIZE || screenX > game.width ||
         screenY < -TILE_SIZE || screenY > game.height) continue;
 
-    // DEBUG: Draw a red rectangle for every ground/tile tile
-    ctx.save();
-    ctx.globalAlpha = 0.3;
-    ctx.fillStyle = '#ff0000';
-    ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
-    ctx.restore();
-
-    // DEBUG: Draw intersection points for this tile
-    const intersectionPoints = [
-      [0, 0, '#00ffff'], // TL
-      [1, 0, '#ff00ff'], // TR
-      [0, 1, '#ffff00'], // BL
-      [1, 1, '#00ff00']  // BR
-    ];
-    for (const [dx, dy, color] of intersectionPoints) {
-      ctx.save();
-      ctx.globalAlpha = 0.7;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(screenX + dx * TILE_SIZE, screenY + dy * TILE_SIZE, 2, 0, 2 * Math.PI);
-      ctx.fill();
-      ctx.restore();
-    }
-
     if (useTilesheet) {
-      // Calculate masks for each corner of this tile
-      const maskTL = getIntersectionMask(x, y);
-      const maskTR = getIntersectionMask(x + 1, y);
-      const maskBL = getIntersectionMask(x, y + 1);
-      const maskBR = getIntersectionMask(x + 1, y + 1);
+      // Calculate autotile masks for each of the 4 corners of this tile
+      // Each corner checks its 4 neighboring tiles to determine the mask
+      const maskTL = getIntersectionMask(x, y);         // Top-left corner
+      const maskTR = getIntersectionMask(x + 1, y);     // Top-right corner
+      const maskBL = getIntersectionMask(x, y + 1);     // Bottom-left corner
+      const maskBR = getIntersectionMask(x + 1, y + 1); // Bottom-right corner
 
-
-      // Draw 4 sub-tiles (8x8 each) for this tile
-      drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);
-      drawAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);
-      drawAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);
-      drawAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);
+      // Draw 4 quadrants (8x8 each) to make up this 16x16 tile
+      drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);       // TL quadrant
+      drawAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);       // TR quadrant
+      drawAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);   // BL quadrant
+      drawAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);   // BR quadrant
     } else {
-      // Fallback: simple brown rectangle
+      // Fallback when tilesheet is not loaded: simple brown rectangle
       ctx.fillStyle = '#8b4513';
       ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
     }
   }
 }
 
-// Draw a single 8x8 quadrant from the autotile sheet
+/**
+ * Draw a single 8x8 quadrant from the autotile sheet.
+ * Uses dual-grid autotiling system where each tile corner checks its 4 neighboring tiles.
+ * 
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Image} tilesheet - The 64x64 tilesheet with 16 tiles in 4x4 grid
+ * @param {number} mask - 4-bit mask (0-15) indicating which neighbors are solid
+ * @param {number} quadrant - Which quadrant of the tile (0=BL, 1=TR, 2=BR, 3=TL)
+ * @param {number} destX - Screen X position
+ * @param {number} destY - Screen Y position
+ */
 function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
-  if (mask === 0) return;
-
   // The tilesheet is 64x64 with 16 tiles arranged in 4x4 grid
   // Each tile is 16x16, we extract 8x8 quadrants
-  // mask (0-15) directly indexes which tile to use
+  // mask (0-15) directly indexes which tile to use from the tilesheet
   const tileCol = mask % 4;
   const tileRow = Math.floor(mask / 4);
   const tileX = tileCol * 16;
   const tileY = tileRow * 16;
 
-  // quadrant determines which 8x8 portion: 0=TL, 1=TR, 2=BL, 3=BR
+  // quadrant determines which 8x8 portion of the 16x16 tile to use
+  // 0=BL, 1=TR, 2=BR, 3=TL
   const qx = (quadrant % 2) * 8;
   const qy = Math.floor(quadrant / 2) * 8;
 
   ctx.drawImage(tilesheet, tileX + qx, tileY + qy, 8, 8, destX, destY, 8, 8);
-}
-
-// Fallback when no tilesheet is available
-function drawFallbackQuadrant(ctx, mask, destX, destY) {
-  if (mask === 0) return;
-  ctx.fillStyle = '#8b4513'; // Brown for ground
-  ctx.fillRect(destX, destY, 8, 8);
 }
 
 function renderEnemies() {
