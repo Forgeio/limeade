@@ -1130,11 +1130,18 @@ function renderTiles() {
       const maskBL = getIntersectionMask(x, y + 1);     // Bottom-left corner
       const maskBR = getIntersectionMask(x + 1, y + 1); // Bottom-right corner
 
-      // Draw 4 quadrants (8x8 each) to make up this 16x16 tile
-      drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);       // TL quadrant
-      drawAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);       // TR quadrant
-      drawAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);   // BL quadrant
-      drawAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);   // BR quadrant
+      // Check if this is an isolated tile (all masks are 0)
+      // In this case, draw a fallback tile instead of using autotiling
+      if (maskTL === 0 && maskTR === 0 && maskBL === 0 && maskBR === 0) {
+        ctx.fillStyle = '#8b4513';
+        ctx.fillRect(screenX, screenY, TILE_SIZE, TILE_SIZE);
+      } else {
+        // Draw 4 quadrants (8x8 each) to make up this 16x16 tile
+        drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);       // TL quadrant
+        drawAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + 8, screenY);       // TR quadrant
+        drawAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX,     screenY + 8);   // BL quadrant
+        drawAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + 8, screenY + 8);   // BR quadrant
+      }
     } else {
       // Fallback when tilesheet is not loaded: simple brown rectangle
       ctx.fillStyle = '#8b4513';
@@ -1155,6 +1162,10 @@ function renderTiles() {
  * @param {number} destY - Screen Y position to draw
  */
 function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
+  // Skip drawing if mask is 0 (no solid neighbors at this intersection)
+  // This prevents drawing transparent/empty portions of the tilesheet
+  if (mask === 0) return;
+
   // The tilesheet is 64x64 with 16 tiles arranged in 4x4 grid
   // mask (0-15) selects which 16x16 tile to use
   const tileCol = mask % 4;
