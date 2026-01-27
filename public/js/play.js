@@ -1147,29 +1147,23 @@ function renderTiles() {
  * Draw a single 8x8 quadrant from the autotile sheet.
  * Uses dual-grid autotiling system where each tile corner checks its 4 neighboring tiles.
  * 
- * The quadrant parameter has a non-intuitive mapping for historical reasons:
- * - quadrant 0 extracts from source (0, 0) but is used for BR tile corner
- * - quadrant 1 extracts from source (8, 0) but is used for BL tile corner
- * - quadrant 2 extracts from source (0, 8) but is used for TR tile corner
- * - quadrant 3 extracts from source (8, 8) but is used for TL tile corner
- * 
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {Image} tilesheet - The 64x64 tilesheet with 16 tiles in 4x4 grid
  * @param {number} mask - 4-bit mask (0-15) indicating which neighbors are solid
- * @param {number} quadrant - Which quadrant to extract (0-3, see mapping above)
- * @param {number} destX - Screen X position
- * @param {number} destY - Screen Y position
+ * @param {number} quadrant - Which 8x8 quadrant to extract from the source tile (0-3)
+ * @param {number} destX - Screen X position to draw
+ * @param {number} destY - Screen Y position to draw
  */
 function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   // The tilesheet is 64x64 with 16 tiles arranged in 4x4 grid
-  // Each tile is 16x16, we extract 8x8 quadrants
-  // mask (0-15) directly indexes which tile to use from the tilesheet
+  // mask (0-15) selects which 16x16 tile to use
   const tileCol = mask % 4;
   const tileRow = Math.floor(mask / 4);
   const tileX = tileCol * 16;
   const tileY = tileRow * 16;
 
-  // Extract the appropriate 8x8 quadrant from the 16x16 source tile
+  // Extract one of four 8x8 quadrants from the selected 16x16 tile
+  // quadrant 0: (0,0), quadrant 1: (8,0), quadrant 2: (0,8), quadrant 3: (8,8)
   const qx = (quadrant % 2) * 8;
   const qy = Math.floor(quadrant / 2) * 8;
 
