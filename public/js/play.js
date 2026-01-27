@@ -1038,18 +1038,23 @@ function renderHurtbox() {
  * In the dual-grid autotiling system, each intersection point is shared by 4 tiles.
  * This function checks which of those 4 tiles are solid and returns a 4-bit mask.
  * 
+ * The intersection point (x, y) is at the corner where 4 tiles meet:
+ * - Top-left tile is at grid position (x, y)
+ * - Top-right tile is at grid position (x+1, y)
+ * - Bottom-left tile is at grid position (x, y+1)
+ * - Bottom-right tile is at grid position (x+1, y+1)
+ * 
  * @param {number} x - Grid X coordinate of the intersection point
  * @param {number} y - Grid Y coordinate of the intersection point
- * @returns {number} 4-bit mask where bit0=top-left, bit1=top-right, bit2=bottom-left, bit3=bottom-right
+ * @returns {number} 4-bit mask where bit0=TL, bit1=TR, bit2=BL, bit3=BR (values 0-15)
  */
 function getIntersectionMask(x, y) {
   // Check the 4 tiles that share this corner intersection point
-  // TL = top-left tile (x-1, y-1), TR = top-right (x, y-1), etc.
   let mask = 0;
-  const tl = isSolidTile(x,     y);     // Top-left tile
-  const tr = isSolidTile(x + 1, y);     // Top-right tile
-  const bl = isSolidTile(x,     y + 1); // Bottom-left tile
-  const br = isSolidTile(x + 1, y + 1); // Bottom-right tile
+  const tl = isSolidTile(x,     y);     // Top-left tile at (x, y)
+  const tr = isSolidTile(x + 1, y);     // Top-right tile at (x+1, y)
+  const bl = isSolidTile(x,     y + 1); // Bottom-left tile at (x, y+1)
+  const br = isSolidTile(x + 1, y + 1); // Bottom-right tile at (x+1, y+1)
   
   if (tl) mask |= 1;  // bit 0
   if (tr) mask |= 2;  // bit 1
@@ -1142,10 +1147,16 @@ function renderTiles() {
  * Draw a single 8x8 quadrant from the autotile sheet.
  * Uses dual-grid autotiling system where each tile corner checks its 4 neighboring tiles.
  * 
+ * The quadrant parameter has a non-intuitive mapping for historical reasons:
+ * - quadrant 0 extracts from source (0, 0) but is used for BR tile corner
+ * - quadrant 1 extracts from source (8, 0) but is used for BL tile corner
+ * - quadrant 2 extracts from source (0, 8) but is used for TR tile corner
+ * - quadrant 3 extracts from source (8, 8) but is used for TL tile corner
+ * 
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {Image} tilesheet - The 64x64 tilesheet with 16 tiles in 4x4 grid
  * @param {number} mask - 4-bit mask (0-15) indicating which neighbors are solid
- * @param {number} quadrant - Which quadrant of the tile (0=BL, 1=TR, 2=BR, 3=TL)
+ * @param {number} quadrant - Which quadrant to extract (0-3, see mapping above)
  * @param {number} destX - Screen X position
  * @param {number} destY - Screen Y position
  */
@@ -1158,8 +1169,7 @@ function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   const tileX = tileCol * 16;
   const tileY = tileRow * 16;
 
-  // quadrant determines which 8x8 portion of the 16x16 tile to use
-  // 0=BL, 1=TR, 2=BR, 3=TL
+  // Extract the appropriate 8x8 quadrant from the 16x16 source tile
   const qx = (quadrant % 2) * 8;
   const qy = Math.floor(quadrant / 2) * 8;
 
