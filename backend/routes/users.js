@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../config/database');
+const { sanitizeDisplayName, canChangeUsername } = require('../utils/userUtils');
 const router = express.Router();
 
 // Get user profile by ID
@@ -160,6 +161,98 @@ router.get('/leaderboard/:type', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching leaderboard:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user's display name
+router.put('/:id/display-name', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { id } = req.params;
+    const { display_name } = req.body;
+
+    // Check if user is updating their own profile
+    if (req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'You can only update your own profile' });
+    }
+
+    // Check rate limiting
+    const allowed = await canChangeUsername(req.user.id);
+    if (!allowed) {
+      return res.status(429).json({ 
+        error: 'You can only change your display name once every 7 days' 
+      });
+    }
+
+    // Sanitize and validate the display name
+    let sanitizedName;
+    try {
+      sanitizedName = sanitizeDisplayName(display_name);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    // Update the display name
+    const result = await db.query(
+      'UPDATE users SET display_name = $1, username_changed_at = NOW() WHERE id = $2 RETURNING *',
+      [sanitizedName, id]
+    );
+
+    res.json({
+      message: 'Display name updated successfully',
+      user: result.rows[0]
+    });
+  } catch (err) {
+    console.error('Error updating display name:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update user's control scheme
+router.put('/:id/controls', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { id } = req.params;
+    const { control_scheme } = req.body;
+
+    // Check if user is updating their own profile
+    if (req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'You can only update your own controls' });
+    }
+
+    // Validate control scheme structure
+    const requiredKeys = ['left', 'right', 'up', 'down', 'jump', 'attack'];
+    if (!control_scheme || typeof control_scheme !== 'object') {
+      return res.status(400).json({ error: 'Invalid control scheme' });
+    }
+
+    for (const key of requiredKeys) {
+      if (!control_scheme[key]) {
+        return res.status(400).json({ 
+          error: `Missing required control: ${key}` 
+        });
+      }
+    }
+
+    // Update the control scheme
+    const result = await db.query(
+      'UPDATE users SET control_scheme = $1 WHERE id = $2 RETURNING control_scheme',
+      [JSON.stringify(control_scheme), id]
+    );
+
+    res.json({
+      message: 'Controls updated successfully',
+      control_scheme: result.rows[0].control_scheme
+    });
+  } catch (err) {
+    console.error('Error updating controls:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

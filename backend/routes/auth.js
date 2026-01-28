@@ -44,9 +44,13 @@ router.get('/user', (req, res) => {
     res.json({
       id: req.user.id,
       username: req.user.username,
+      display_name: req.user.display_name,
+      permanent_id: req.user.permanent_id,
       email: req.user.email,
       avatar_url: req.user.avatar_url,
       oauth_provider: req.user.oauth_provider,
+      control_scheme: req.user.control_scheme,
+      username_changed_at: req.user.username_changed_at,
     });
   } else {
     res.status(401).json({ error: 'Not authenticated' });
