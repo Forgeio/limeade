@@ -200,7 +200,7 @@ function loadImage(src) {
   });
 }
 
-function initGame() {
+async function initGame() {
   game.canvas = document.getElementById('gameCanvas');
   game.ctx = game.canvas.getContext('2d');
 
@@ -213,7 +213,7 @@ function initGame() {
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 
-  setupControls();
+  await setupControls();
   setupBackButton();
 
   loadAssets().then(() => {
@@ -245,21 +245,34 @@ function resizeCanvas() {
   if (game.ctx) game.ctx.imageSmoothingEnabled = false;
 }
 
-function setupControls() {
+async function setupControls() {
+  // Load user's control scheme
+  const userControls = await loadUserControls();
+  
+  // Use user controls or fall back to defaults
+  const keyMap = userControls || {
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+    up: 'ArrowUp',
+    down: 'ArrowDown',
+    jump: 'ArrowUp',
+    attack: 'Space'
+  };
+  
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'ArrowLeft') game.keys.left = true;
-    if (e.code === 'ArrowRight') game.keys.right = true;
-    if (e.code === 'ArrowUp') {
+    if (e.code === keyMap.left) game.keys.left = true;
+    if (e.code === keyMap.right) game.keys.right = true;
+    if (e.code === keyMap.up || e.code === keyMap.jump) {
       game.keys.up = true;
       if (!game.keys.jump) {
         game.keys.jumpPressed = true; // New press
       }
       game.keys.jump = true;
     }
-    if (e.code === 'ArrowDown') game.keys.down = true;
+    if (e.code === keyMap.down) game.keys.down = true;
     
-    // Space for attack
-    if (e.code === 'Space') {
+    // Attack key
+    if (e.code === keyMap.attack) {
       if (!game.keys.attack) {
         game.keys.attackPressed = true; // New attack press
       }
@@ -270,15 +283,30 @@ function setupControls() {
   });
 
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'ArrowLeft') game.keys.left = false;
-    if (e.code === 'ArrowRight') game.keys.right = false;
-    if (e.code === 'ArrowUp') {
+    if (e.code === keyMap.left) game.keys.left = false;
+    if (e.code === keyMap.right) game.keys.right = false;
+    if (e.code === keyMap.up || e.code === keyMap.jump) {
       game.keys.up = false;
       game.keys.jump = false;
     }
-    if (e.code === 'ArrowDown') game.keys.down = false;
-    if (e.code === 'Space') game.keys.attack = false;
+    if (e.code === keyMap.down) game.keys.down = false;
+    if (e.code === keyMap.attack) game.keys.attack = false;
   });
+}
+
+// Load user's control scheme from the server
+async function loadUserControls() {
+  try {
+    const response = await fetch('/auth/user');
+    if (!response.ok) {
+      return null;
+    }
+    const user = await response.json();
+    return user.control_scheme || null;
+  } catch (err) {
+    console.error('Error loading user controls:', err);
+    return null;
+  }
 }
 
 function setupBackButton() {
@@ -1752,6 +1780,7 @@ function showLevelCompleteDialog() {
   const urlParams = new URLSearchParams(window.location.search);
   const fromEditor = urlParams.get('from') === 'editor';
   const levelId = urlParams.get('id');
+  const mode = urlParams.get('mode');
   
   if (fromEditor) {
     // Return to editor after short delay
@@ -1759,8 +1788,13 @@ function showLevelCompleteDialog() {
       const target = levelId ? `editor.html?id=${levelId}` : 'editor.html';
       window.location.href = target;
     }, 1500);
+  } else if (mode === 'publish') {
+    // Show publish dialog
+    showPublishDialog(levelId);
   } else {
-    // Show completion dialog for played levels
+    // Show completion dialog for played levels and record stats
+    recordLevelCompletion(levelId);
+    
     const seconds = Math.floor(game.timer.finalTime / 1000);
     const ms = Math.floor((game.timer.finalTime % 1000) / 10);
     const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
@@ -1792,9 +1826,20 @@ function showLevelCompleteDialog() {
     dialog.innerHTML = `
       <h2 style="margin: 0 0 16px 0; font-size: 32px; color: #51cf66;">Level Complete!</h2>
       <p style="font-size: 24px; margin: 16px 0; color: #212121;">Time: ${timeString}s</p>
-      <button id="closeDialog" style="
+      <button id="continueBtn" style="
         background: #51cf66;
         color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+        margin-right: 8px;
+      ">Continue to Level Page</button>
+      <button id="closeDialog" style="
+        background: #ddd;
+        color: #333;
         border: none;
         padding: 12px 24px;
         font-size: 16px;
@@ -1807,10 +1852,200 @@ function showLevelCompleteDialog() {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     
+    document.getElementById('continueBtn').addEventListener('click', () => {
+      window.location.href = `level.html?id=${levelId}`;
+    });
+    
     document.getElementById('closeDialog').addEventListener('click', () => {
       document.body.removeChild(overlay);
     });
   }
+}
+
+// Record level completion
+async function recordLevelCompletion(levelId) {
+  if (!levelId) return;
+  
+  const completionTime = Math.floor(game.timer.finalTime / 1000);
+  
+  try {
+    await fetch(`/api/levels/${levelId}/play`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        completed: true,
+        completion_time: completionTime
+      })
+    });
+  } catch (err) {
+    console.error('Error recording completion:', err);
+  }
+}
+
+// Show publish dialog
+function showPublishDialog(levelId) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+  
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    padding: 32px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+  `;
+  
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 24px 0; font-size: 28px; color: #51cf66;">Publish Your Level</h2>
+    <div style="margin-bottom: 16px; text-align: left;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Level Title</label>
+      <input type="text" id="publishTitle" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      " placeholder="Enter level title">
+    </div>
+    <div style="margin-bottom: 16px; text-align: left;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Description</label>
+      <textarea id="publishDescription" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        resize: vertical;
+        min-height: 80px;
+        box-sizing: border-box;
+      " placeholder="Describe your level..."></textarea>
+    </div>
+    <div style="margin-bottom: 16px; text-align: left; opacity: 0.5;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Optional Timer (Coming Soon)</label>
+      <input type="number" disabled style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      " placeholder="Time limit in seconds">
+    </div>
+    <div style="margin-bottom: 24px; text-align: left; opacity: 0.5;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Clear Condition (Coming Soon)</label>
+      <select disabled style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      ">
+        <option>None</option>
+        <option>Collect all coins</option>
+        <option>Don't touch the ground</option>
+      </select>
+    </div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button id="cancelPublish" style="
+        background: #ddd;
+        color: #333;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Cancel</button>
+      <button id="confirmPublish" style="
+        background: #51cf66;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Publish</button>
+    </div>
+  `;
+  
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  
+  document.getElementById('cancelPublish').addEventListener('click', () => {
+    document.body.removeChild(overlay);
+    window.location.href = 'profile.html';
+  });
+  
+  document.getElementById('confirmPublish').addEventListener('click', async () => {
+    const title = document.getElementById('publishTitle').value.trim();
+    const description = document.getElementById('publishDescription').value.trim();
+    
+    if (!title) {
+      alert('Please enter a title for your level');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/levels/${levelId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          published: true
+        })
+      });
+      
+      if (response.ok) {
+        document.body.removeChild(overlay);
+        // Show success message
+        const successOverlay = document.createElement('div');
+        successOverlay.style.cssText = overlay.style.cssText;
+        successOverlay.innerHTML = `
+          <div style="${dialog.style.cssText}">
+            <h2 style="margin: 0 0 16px 0; font-size: 32px; color: #51cf66;">Level Published!</h2>
+            <p style="margin: 16px 0;">Your level is now available for everyone to play.</p>
+            <button onclick="window.location.href='profile.html'" style="
+              background: #51cf66;
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              font-size: 16px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-family: Roboto, sans-serif;
+            ">Back to Profile</button>
+          </div>
+        `;
+        document.body.appendChild(successOverlay);
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to publish level');
+      }
+    } catch (err) {
+      console.error('Error publishing level:', err);
+      alert('Error publishing level');
+    }
+  });
 }
 
 document.addEventListener('DOMContentLoaded', initGame);

@@ -213,6 +213,16 @@ router.put('/:id', async (req, res) => {
       values.push(published);
       if (published) {
         updateFields.push(`published_at = NOW()`);
+        
+        // Create level stats entry if publishing for the first time
+        await db.query(
+          `INSERT INTO level_stats (level_id, total_plays, total_clears, total_likes, total_dislikes, clear_rate)
+           VALUES ($1, 0, 0, 0, 0, 0.00)
+           ON CONFLICT (level_id) DO NOTHING`,
+          [id]
+        );
+      }
+    }
       }
     }
 

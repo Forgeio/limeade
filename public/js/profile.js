@@ -188,7 +188,8 @@ function displayDrafts(drafts) {
 
 function publishDraft(e, id) {
   e.stopPropagation();
-  window.location.href = `editor.html?id=${id}`;
+  // Send user to play mode to verify level before publishing
+  window.location.href = `play.html?id=${id}&mode=publish`;
 }
 
 function editDraft(e, id) {
