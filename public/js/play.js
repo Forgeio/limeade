@@ -249,8 +249,8 @@ async function setupControls() {
   // Load user's control scheme
   const userControls = await loadUserControls();
   
-  // Use user controls or fall back to defaults
-  const keyMap = userControls || {
+  // Default controls
+  const defaults = {
     left: 'ArrowLeft',
     right: 'ArrowRight',
     up: 'ArrowUp',
@@ -258,6 +258,20 @@ async function setupControls() {
     jump: 'ArrowUp',
     attack: 'Space'
   };
+  
+  // Use user controls or fall back to defaults
+  let keyMap = defaults;
+  if (userControls) {
+    // Validate all required keys exist
+    const requiredKeys = ['left', 'right', 'up', 'down', 'jump', 'attack'];
+    const hasAllKeys = requiredKeys.every(key => userControls[key]);
+    
+    if (hasAllKeys) {
+      keyMap = userControls;
+    } else {
+      console.warn('User controls missing required keys, using defaults');
+    }
+  }
   
   window.addEventListener('keydown', (e) => {
     if (e.code === keyMap.left) game.keys.left = true;
@@ -1997,8 +2011,19 @@ function showPublishDialog(levelId) {
     const title = document.getElementById('publishTitle').value.trim();
     const description = document.getElementById('publishDescription').value.trim();
     
+    // Client-side validation
     if (!title) {
       alert('Please enter a title for your level');
+      return;
+    }
+    
+    if (title.length > 255) {
+      alert('Title must be 255 characters or less');
+      return;
+    }
+    
+    if (description.length > 5000) {
+      alert('Description must be 5000 characters or less');
       return;
     }
     

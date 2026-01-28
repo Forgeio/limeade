@@ -233,10 +233,17 @@ router.put('/:id/controls', async (req, res) => {
       return res.status(400).json({ error: 'Invalid control scheme' });
     }
 
+    // Validate each control key exists and is a valid key code
+    const validKeyPattern = /^[A-Za-z0-9]+$/;
     for (const key of requiredKeys) {
       if (!control_scheme[key]) {
         return res.status(400).json({ 
           error: `Missing required control: ${key}` 
+        });
+      }
+      if (typeof control_scheme[key] !== 'string' || !validKeyPattern.test(control_scheme[key])) {
+        return res.status(400).json({ 
+          error: `Invalid key code for ${key}. Must be alphanumeric.` 
         });
       }
     }

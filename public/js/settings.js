@@ -10,6 +10,7 @@ let currentControls = {
   attack: 'Space'
 };
 let capturingKey = null;
+let keydownHandler = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Load user data from API
@@ -172,19 +173,31 @@ function captureKey(action) {
     const el = document.querySelector(`[data-action="${action}"]`);
     if (!el) return;
     
+    // Clean up any existing handler
+    if (keydownHandler) {
+        document.removeEventListener('keydown', keydownHandler);
+    }
+    
     capturingKey = action;
-    el.textContent = 'Press a key...';
+    el.textContent = 'Press a key... (ESC to cancel)';
     el.style.background = 'var(--primary-color)';
     el.style.color = 'white';
     
-    // Add event listener for key press
-    document.addEventListener('keydown', handleKeyCapture);
+    // Create new handler
+    keydownHandler = handleKeyCapture;
+    document.addEventListener('keydown', keydownHandler);
 }
 
 function handleKeyCapture(e) {
     e.preventDefault();
     
     if (!capturingKey) return;
+    
+    // Allow ESC to cancel
+    if (e.code === 'Escape') {
+        cancelKeyCapture();
+        return;
+    }
     
     // Update the control
     currentControls[capturingKey] = e.code;
@@ -193,14 +206,24 @@ function handleKeyCapture(e) {
     updateControlsDisplay();
     
     // Reset capture state
-    const el = document.querySelector(`[data-action="${capturingKey}"]`);
-    if (el) {
-        el.style.background = '';
-        el.style.color = '';
+    cancelKeyCapture();
+}
+
+function cancelKeyCapture() {
+    if (capturingKey) {
+        const el = document.querySelector(`[data-action="${capturingKey}"]`);
+        if (el) {
+            el.style.background = '';
+            el.style.color = '';
+            updateControlsDisplay();
+        }
     }
     
     capturingKey = null;
-    document.removeEventListener('keydown', handleKeyCapture);
+    if (keydownHandler) {
+        document.removeEventListener('keydown', keydownHandler);
+        keydownHandler = null;
+    }
 }
 
 async function saveControls() {

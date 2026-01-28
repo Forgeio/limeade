@@ -13,34 +13,46 @@ router.get('/', async (req, res) => {
     const limit = parseInt(req.query.limit) || 12;
     const offset = (page - 1) * limit;
 
-    let orderBy, whereClause;
+    let orderBy, dateFilter, dateValue;
     
     // Define filter logic
     if (filter === 'new') {
       // Most recent levels
       orderBy = 'l.published_at DESC';
-      whereClause = '';
+      dateFilter = null;
+      dateValue = null;
     } else if (filter === 'hot') {
       // Highest rated levels of the week
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      whereClause = `AND l.published_at >= '${oneWeekAgo.toISOString()}'`;
+      dateFilter = 'AND l.published_at >= $3';
+      dateValue = oneWeekAgo.toISOString();
       orderBy = 'ls.total_likes DESC, l.published_at DESC';
     } else if (filter === 'top') {
       // Highest rated levels of the year
       const oneYearAgo = new Date();
       oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      whereClause = `AND l.published_at >= '${oneYearAgo.toISOString()}'`;
+      dateFilter = 'AND l.published_at >= $3';
+      dateValue = oneYearAgo.toISOString();
       orderBy = 'ls.total_likes DESC';
     } else {
       // Default to hot
       const oneWeekAgo = new Date();
       oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      whereClause = `AND l.published_at >= '${oneWeekAgo.toISOString()}'`;
+      dateFilter = 'AND l.published_at >= $3';
+      dateValue = oneWeekAgo.toISOString();
       orderBy = 'ls.total_likes DESC, l.published_at DESC';
     }
 
-    // Safe to use string interpolation here as orderBy and whereClause are constructed above, not from user input
+    // Build query with parameterized values
+    const queryParams = [limit, offset];
+    if (dateValue) {
+      queryParams.push(dateValue);
+    }
+    
+    const whereClause = dateFilter || '';
+    
+    // orderBy is from a controlled whitelist, safe to interpolate
     const result = await db.query(
       `SELECT l.id, l.title, l.description, l.creator_id, l.published_at,
               u.username as creator_name,
@@ -53,14 +65,16 @@ router.get('/', async (req, res) => {
        WHERE l.published = true ${whereClause}
        ORDER BY ${orderBy}
        LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      queryParams
     );
 
-    const countQuery = whereClause 
-      ? `SELECT COUNT(*) FROM levels l WHERE l.published = true ${whereClause}`
-      : 'SELECT COUNT(*) FROM levels WHERE published = true';
-    
-    const countResult = await db.query(countQuery);
+    // Count query with same date filter
+    const countParams = dateValue ? [dateValue] : [];
+    const countDateFilter = dateValue ? 'AND l.published_at >= $1' : '';
+    const countResult = await db.query(
+      `SELECT COUNT(*) FROM levels l WHERE l.published = true ${countDateFilter}`,
+      countParams
+    );
 
     const totalCount = parseInt(countResult.rows[0].count);
     const totalPages = Math.ceil(totalCount / limit);
