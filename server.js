@@ -45,6 +45,28 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
+// Get available music files
+app.get('/api/music', (req, res) => {
+  const musicDir = path.join(__dirname, 'public', 'music');
+  const fs = require('fs');
+  
+  fs.readdir(musicDir, (err, files) => {
+    if (err) {
+      console.error('Error reading music directory:', err);
+      return res.status(500).json({ error: 'Failed to list music files' });
+    }
+    
+    // Filter for common audio files
+    const validExtensions = ['.wav', '.mp3', '.ogg'];
+    const musicFiles = files.filter(file => {
+      const ext = path.extname(file).toLowerCase();
+      return validExtensions.includes(ext);
+    }).sort(); // Alphabetical order
+    
+    res.json(musicFiles);
+  });
+});
+
 // 404 handler for API routes
 app.use('/api/*', (req, res) => {
   res.status(404).json({ error: 'API endpoint not found' });

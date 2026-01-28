@@ -126,6 +126,12 @@ const game = {
     tilesheet: null,
     tilesheet2: null,
     timerFont: null,
+    soundSwish: null,
+    soundPunch: null,
+    soundCoin: null,
+    soundToken: null,
+    soundJump: null,
+    soundLand: null
   }
 };
 
@@ -149,7 +155,37 @@ function loadAssets() {
     loadImage('graphics/tilesheet_2.png').then(img => {
       game.assets.tilesheet2 = img;
     }),
+    loadAudio('sounds/swish.ogg').then(audio => game.assets.soundSwish = audio),
+    loadAudio('sounds/punch.ogg').then(audio => game.assets.soundPunch = audio),
+    loadAudio('sounds/coin.ogg').then(audio => game.assets.soundCoin = audio),
+    loadAudio('sounds/token_get.ogg').then(audio => game.assets.soundToken = audio),
+    loadAudio('sounds/jump.ogg').then(audio => game.assets.soundJump = audio),
+    loadAudio('sounds/land.ogg').then(audio => game.assets.soundLand = audio),
   ]);
+}
+
+function loadAudio(src) {
+  return new Promise((resolve) => {
+    const audio = new Audio();
+    audio.src = src;
+    audio.oncanplaythrough = () => resolve(audio);
+    audio.onerror = () => {
+        console.warn(`Failed to load audio ${src}`);
+        resolve(null);
+    };
+    // Fallback for some browsers that don't fire canplaythrough immediately without interaction
+    // Just resolving immediately for now to prevent hanging, audio won't play until loaded anyway
+    setTimeout(() => resolve(audio), 100);
+  });
+}
+
+function playSound(audio) {
+  if (audio) {
+    // Clone to ensure overlapping sounds play correctly
+    const clone = audio.cloneNode();
+    clone.volume = 0.4;
+    clone.play().catch(e => console.log('Sound effect play failed', e));
+  }
 }
 
 function loadImage(src) {
@@ -170,6 +206,9 @@ function initGame() {
 
   // Disable image smoothing for pixel art
   game.ctx.imageSmoothingEnabled = false;
+
+  // Ensure window has focus for key events
+  window.focus();
 
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
@@ -315,6 +354,60 @@ function applyLevelData(level) {
 
 function resetLevelState() {
   const levelData = game.levelData || {};
+  
+  // Handle background music
+  const newMusic = levelData.music;
+  const newMusicPath = newMusic ? (newMusic.startsWith('http') ? newMusic : `/music/${newMusic}`) : null;
+
+  if (newMusicPath) {
+    // Only change music if it's different from what's playing
+    if (!game.bgm || game.currentMusicPath !== newMusicPath) {
+      if (game.bgm) {
+        game.bgm.pause();
+      }
+      
+      game.bgm = new Audio(newMusicPath);
+      game.bgm.loop = true;
+      game.bgm.volume = 0.5;
+      game.currentMusicPath = newMusicPath;
+      
+      const playPromise = game.bgm.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(e => {
+          console.log('Audio autoplay prevented:', e);
+          // Add a one-time click listener to start music if autoplay failed
+          const startAudio = () => {
+            if (game.bgm && game.bgm.paused) {
+              game.bgm.play().then(() => {
+                // Remove listeners only after successful play
+                document.removeEventListener('click', startAudio);
+                document.removeEventListener('keydown', startAudio);
+              }).catch(e => console.log('Retry play failed', e));
+            } else {
+               // Already playing or stopped
+               document.removeEventListener('click', startAudio);
+               document.removeEventListener('keydown', startAudio);
+            }
+          };
+          document.addEventListener('click', startAudio);
+          document.addEventListener('keydown', startAudio);
+        });
+      }
+    } else {
+        // Music is already playing and matches, ensure it's actually playing
+        if (game.bgm && game.bgm.paused) {
+             game.bgm.play().catch(e => console.log('Resume failed:', e));
+        }
+    }
+  } else {
+    // No music requested, stop current if exists
+    if (game.bgm) {
+      game.bgm.pause();
+      game.bgm = null;
+      game.currentMusicPath = null;
+    }
+  }
+
   game.levelWidth = levelData.width || 50;
   game.levelHeight = levelData.height || 20;
   game.tiles = levelData.tiles || {};
@@ -469,6 +562,7 @@ function updateCoins() {
          const dist = Math.abs(tileX - cx) + Math.abs(tileY - cy);
          if (dist < radius) {
              game.collectedCoins.add(key);
+             playSound(game.assets.soundCoin);
              // Start collection animation
              game.coinAnims.push({
                  x: tx * TILE_SIZE,
@@ -484,6 +578,7 @@ function updateCoins() {
          const dist = Math.abs(tileX - cx) + Math.abs(tileY - cy);
          if (dist < radius) {
              game.collectedTokens.add(key);
+             playSound(game.assets.soundToken);
              // Start token animation
              game.tokenAnims.push({
                  x: tx * TILE_SIZE,
@@ -719,6 +814,7 @@ function handleAttack() {
     player.attackTimer = ATTACK_DURATION;
     player.attackAnimTimer = ATTACK_DURATION; // Keep decoupled from hitbox logic
     player.attackCooldown = ATTACK_COOLDOWN;
+    playSound(game.assets.soundSwish);
   }
   game.keys.attackPressed = false;
 
@@ -736,9 +832,11 @@ function handleAttack() {
 
     if (tile.type === 'coin' && !game.collectedCoins.has(key)) {
        game.collectedCoins.add(key);
+       playSound(game.assets.soundCoin);
        game.coinAnims.push({ x: tile.x, y: tile.y, timer: 0 });
     } else if (tile.type === 'diamond' && !game.collectedTokens.has(key)) {
        game.collectedTokens.add(key);
+       playSound(game.assets.soundToken);
        game.tokenAnims.push({ x: tile.x, y: tile.y, timer: 0 });
     }
   });
@@ -763,19 +861,27 @@ function handleAttack() {
     }
   }
 
-  // 2. Check Walls (Solid Blocks)
-  const walls = getCollidingTiles(hurtbox).filter(t => isSolidTile(t.type));
+  // 2. Check Walls (Solid Blocks) & Spikes
+  // Must pass true to includeHazards so spikes are returned by getCollidingTiles
+  const walls = getCollidingTiles(hurtbox, true).filter(t => {
+    if (isSolidTile(t.type)) return true;
+    if (t.type === 'spike') return spikeIntersect(hurtbox, t);
+    return false;
+  });
   for (const wall of walls) {
     const dist = Math.abs((wall.x + wall.width / 2) - cx) + Math.abs((wall.y + wall.height / 2) - cy);
     if (!hitData || dist < hitData.dist) {
-      hitData = { type: 'wall', obj: wall, dist: dist };
+      // Correctly label the type so pogo logic works
+      const hitType = wall.type === 'spike' ? 'spike' : 'wall';
+      hitData = { type: hitType, obj: wall, dist: dist };
     }
   }
 
   // 3. Process Closest Hit
   if (hitData) {
-    // End attack immediately on hit (except purely visual hits, but mechanics say end it)
+    // End attack immediately on hit
     player.attackTimer = 0;
+    playSound(game.assets.soundPunch);
 
     if (hitData.type === 'enemy') {
        const enemy = hitData.obj;
@@ -786,29 +892,18 @@ function handleAttack() {
          // Ensure they stay active for the death fall
          enemy.active = true;
        }
+    }
 
-       // Check pogo on enemy
-       if (player.attackDir.y > 0 && isImpactFrame) {
+    // Check pogo on suitable targets (Enemy or Spike ONLY)
+    // We explicitly exclude 'wall' to prevent boosting off normal ground/walls
+    const canPogo = hitData.type === 'enemy' || hitData.type === 'spike';
+    if (canPogo && player.attackDir.y > 0 && isImpactFrame) {
          player.velY = BOUNCE_VELOCITY;
          player.onGround = false;
          player.isJumping = false;
-       }
     }
-    // If 'wall', attack just ends (clink).
+
     return; // Stop processing frame
-  }
-
-  // 4. Spike Pogo Logic (only if we didn't hit a wall/enemy blocking the way)
-  if (player.attackDir.y > 0 && isImpactFrame) {
-    const nearbyHazards = getCollidingTiles(hurtbox, true);
-    const hitSpike = nearbyHazards.some(tile => tile.type === 'spike' && spikeIntersect(hurtbox, tile));
-
-    if (hitSpike) {
-      player.velY = BOUNCE_VELOCITY;
-      player.onGround = false;
-      player.isJumping = false;
-      player.attackTimer = 0; // End attack on pogo too
-    }
   }
 }
 
@@ -857,6 +952,7 @@ function performGroundJump(player, maxSpeed) {
   player.velY = BASE_JUMP_VELOCITY + jumpBonus;
   player.onGround = false;
   player.isJumping = true;
+  playSound(game.assets.soundJump);
 }
 
 function tryWallJump(player) {
@@ -868,6 +964,7 @@ function tryWallJump(player) {
     player.isJumping = true;
     player.wallCoyoteTimer = 0;
     player.touchingWallLeft = false;
+    playSound(game.assets.soundJump);
     return true;
   }
 
@@ -879,6 +976,7 @@ function tryWallJump(player) {
     player.isJumping = true;
     player.wallCoyoteTimer = 0;
     player.touchingWallRight = false;
+    playSound(game.assets.soundJump);
     return true;
   }
 
@@ -929,11 +1027,14 @@ function movePlayerX(dx) {
 
 function movePlayerY(dy) {
   const player = game.player;
+  const wasOnGround = player.onGround;
+
   player.y += dy;
   
   // No top bound - player can go above level
   
   player.onGround = false;
+  let landedThisFrame = false;
 
   const collisionsY = getCollidingTiles(player);
   collisionsY.forEach((tile) => {
@@ -942,6 +1043,11 @@ function movePlayerY(dy) {
       player.y = tile.y - player.height;
       player.velY = 0;
       player.onGround = true;
+      
+      if (!landedThisFrame && !game.player.wasOnGround && dy > 1) { // Only play if falling with some speed
+         playSound(game.assets.soundLand);
+         landedThisFrame = true;
+      }
     } else if (dy < 0) {
       player.y = tile.y + TILE_SIZE;
       player.velY = 0;

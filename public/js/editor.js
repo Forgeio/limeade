@@ -34,6 +34,7 @@ const editor = {
   panCameraStartY: 0,
   selectedTile: 'ground',
   levelData: {},
+  levelMusic: '', // Selected background music
   spawnPosition: null, // Track spawn position
   goalPosition: null,  // Track goal position
   isDragging: false,
@@ -217,6 +218,7 @@ function initEditor() {
 
   // Load assets and user's drafts
   loadEditorAssets().then(() => {
+    loadMusicList(); // Fetch available music
     renderToolbarPreviews();
     return loadUserDrafts();
   }).then(() => {
@@ -880,9 +882,15 @@ async function createNewDraft() {
   editor.levelId = null;
   editor.levelTitle = getNextDraftTitle();
   editor.isNewDraft = true;
+  editor.levelMusic = '';
   editor.levelData = {};
   editor.gridWidth = 50;
   editor.gridHeight = 20;
+
+  const musicSelect = document.getElementById('musicSelect');
+  if (musicSelect) {
+      musicSelect.value = '';
+  }
 
   // Update level name input
   const levelNameInput = document.getElementById('levelName');
@@ -1065,6 +1073,72 @@ function renderLevelList(items, type) {
   }).join('');
 }
 
+
+async function loadMusicList() {
+  try {
+    const response = await fetch('/api/music');
+    if (!response.ok) throw new Error('Failed to load music list');
+    const files = await response.json();
+    const select = document.getElementById('musicSelect');
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">(No Music)</option>';
+    files.forEach(file => {
+      const option = document.createElement('option');
+      option.value = file;
+      option.textContent = file;
+      select.appendChild(option);
+    });
+
+    if (editor.levelMusic) {
+      select.value = editor.levelMusic;
+    }
+
+    const previewBtn = document.getElementById('musicPreviewBtn');
+    if (previewBtn) {
+      previewBtn.addEventListener('click', () => {
+        if (editor.previewAudio) {
+          editor.previewAudio.pause();
+          editor.previewAudio = null;
+          previewBtn.innerHTML = '<svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>';
+          return;
+        }
+
+        const musicFile = select.value;
+        if (!musicFile) return;
+
+        const musicPath = musicFile.startsWith('http') ? musicFile : `/music/${musicFile}`;
+        editor.previewAudio = new Audio(musicPath);
+        editor.previewAudio.loop = true;
+        editor.previewAudio.volume = 0.5;
+        
+        editor.previewAudio.play().then(() => {
+          previewBtn.innerHTML = '<svg class="icon"><use href="icons.svg#icon-pause"/></svg>';
+        }).catch(err => {
+          console.error('Error playing preview:', err);
+        });
+      });
+    }
+
+    select.addEventListener('change', (e) => {
+      if (editor.previewAudio) {
+        editor.previewAudio.pause();
+        editor.previewAudio = null;
+        if (previewBtn) {
+          previewBtn.innerHTML = '<svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>';
+        }
+      }
+
+      editor.levelMusic = e.target.value;
+      editor.hasUnsavedChanges = true;
+      autoSave();
+    });
+
+  } catch (err) {
+    console.error('Error loading music list:', err);
+  }
+}
+
 async function loadLevelAndClose(id) {
   // If we are already editing this level, just close
   // Check if we need to save current first?
@@ -1148,6 +1222,12 @@ async function loadLevel(levelId) {
         editor.gridWidth = level.level_data.width || 50;
         editor.gridHeight = level.level_data.height || 20;
         editor.levelData = level.level_data.tiles || {};
+        editor.levelMusic = level.level_data.music || '';
+
+        const musicSelect = document.getElementById('musicSelect');
+        if (musicSelect) {
+            musicSelect.value = editor.levelMusic;
+        }
         
         // Restore spawn and goal positions
         Object.keys(editor.levelData).forEach(key => {
@@ -1194,7 +1274,8 @@ async function autoSave() {
         localStorage.setItem('levelDraft-' + editor.levelId, JSON.stringify({
           width: editor.gridWidth,
           height: editor.gridHeight,
-          tiles: editor.levelData
+          tiles: editor.levelData,
+          music: editor.levelMusic
         }));
         editor.isNewDraft = false;
         editor.hasUnsavedChanges = false;
@@ -1213,7 +1294,8 @@ async function autoSave() {
           level_data: {
             width: editor.gridWidth,
             height: editor.gridHeight,
-            tiles: editor.levelData
+            tiles: editor.levelData,
+            music: editor.levelMusic
           }
         })
       });
@@ -1251,7 +1333,8 @@ async function autoSave() {
     localStorage.setItem('levelDraft-' + editor.levelId, JSON.stringify({
       width: editor.gridWidth,
       height: editor.gridHeight,
-      tiles: editor.levelData
+      tiles: editor.levelData,
+      music: editor.levelMusic
     }));
     editor.hasUnsavedChanges = false;
     updateStatus('Saved (local)');
@@ -1269,7 +1352,8 @@ async function autoSave() {
         level_data: {
           width: editor.gridWidth,
           height: editor.gridHeight,
-          tiles: editor.levelData
+          tiles: editor.levelData,
+          music: editor.levelMusic
         }
       })
     });
@@ -1381,7 +1465,8 @@ function testLevel() {
   sessionStorage.setItem('testLevelData', JSON.stringify({
     width: editor.gridWidth,
     height: editor.gridHeight,
-    tiles: editor.levelData
+    tiles: editor.levelData,
+    music: editor.levelMusic
   }));
   params.set('source', 'session');
 

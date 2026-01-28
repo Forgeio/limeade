@@ -128,7 +128,19 @@
       </div>
     </div>
     <div class="toolbar-right">
-      <!-- Empty right toolbar -->
+      <div class="music-selector tooltip-container">
+        <svg class="icon" viewBox="0 0 24 24" width="24" height="24">
+          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" fill="currentColor"/>
+        </svg>
+        <select id="musicSelect" class="music-dropdown">
+          <option value="">No Music</option>
+          <option value="" disabled>Loading...</option>
+        </select>
+        <button id="musicPreviewBtn" class="icon-btn" title="Preview Music" style="margin-left: 8px;">
+          <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
+        </button>
+        <div class="tooltip">Background Music</div>
+      </div>
     </div>
   </div>
 
