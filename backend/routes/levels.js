@@ -237,8 +237,6 @@ router.put('/:id', async (req, res) => {
         );
       }
     }
-      }
-    }
 
     updateFields.push(`updated_at = NOW()`);
     values.push(id);
