@@ -15,8 +15,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   currentLevelId = getLevelIdFromUrl();
   
   if (!currentLevelId) {
-    // Redirect to discover if no ID
-    window.location.href = 'discover.html';
+    // Redirect to home if no ID
+    window.location.href = '/';
     return;
   }
   
@@ -32,7 +32,7 @@ async function loadLevel() {
     if (!response.ok) {
       if (response.status === 404) {
         alert('Level not found');
-        window.location.href = 'discover.html';
+        window.location.href = '/';
         return;
       }
       throw new Error('Failed to fetch level');
@@ -43,7 +43,7 @@ async function loadLevel() {
   } catch (err) {
     console.error('Error loading level:', err);
     alert('Error loading level');
-    window.location.href = 'discover.html';
+    window.location.href = '/';
   }
 }
 
@@ -68,8 +68,8 @@ function displayLevel(level) {
   
   // Set creator
   const creatorLink = document.getElementById('creatorLink');
-  creatorLink.textContent = level.creator_display_name || level.creator_name || 'Unknown';
-  creatorLink.href = `profile.html?id=${level.creator_id}`;
+  creatorLink.textContent = level.creator_name || 'Unknown';
+  creatorLink.href = `/profile?id=${level.creator_id}`;
   
   // Set published date
   const publishedDate = new Date(level.published_at);
@@ -138,7 +138,7 @@ function updateRatingButtons() {
 // Play level
 function playLevel() {
   if (!currentLevelId) return;
-  window.location.href = `play.html?id=${currentLevelId}`;
+  window.location.href = `/play?id=${currentLevelId}`;
 }
 
 // Rate level with like

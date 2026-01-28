@@ -27,37 +27,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 function populateSettings(user) {
     const usernameInput = document.getElementById('usernameInput');
-    const displayNameInput = document.getElementById('displayNameInput');
-    const permanentIdInput = document.getElementById('permanentIdInput');
-    const emailInput = document.getElementById('emailInput');
     const settingsAvatar = document.getElementById('settingsAvatar');
+    const saveUsernameBtn = document.getElementById('saveUsernameBtn');
 
     if (usernameInput) {
         usernameInput.value = user.username || '';
-    }
-    
-    if (displayNameInput) {
-        displayNameInput.value = user.display_name || '';
-        displayNameInput.placeholder = user.username || 'Enter display name';
-    }
-    
-    if (permanentIdInput) {
-        permanentIdInput.value = user.permanent_id || '';
-    }
-    
-    if (emailInput) {
-        emailInput.value = user.email || '';
+        
+        // Add input listener to show/hide save button
+        usernameInput.addEventListener('input', () => {
+            const hasChanged = usernameInput.value.trim() !== (user.username || '');
+            if (hasChanged && usernameInput.value.trim().length >= 3) {
+                saveUsernameBtn.classList.add('visible');
+            } else {
+                saveUsernameBtn.classList.remove('visible');
+            }
+        });
     }
 
     if (settingsAvatar) {
-        // Get initials from display name or username
-        const name = user.display_name || user.username || 'GU';
-        const initials = name
-            .split(' ')
-            .map(word => word[0])
-            .join('')
-            .toUpperCase()
-            .substring(0, 2);
+        const name = user.username || 'GU';
+        const initials = name.substring(0, 2).toUpperCase();
         settingsAvatar.textContent = initials;
     }
     
@@ -72,12 +61,12 @@ function populateSettings(user) {
 }
 
 function checkUsernameChangeAvailability(user) {
-    const displayNameNote = document.getElementById('displayNameNote');
-    if (!displayNameNote) return;
+    const usernameNote = document.getElementById('usernameNote');
+    if (!usernameNote) return;
     
     if (!user.username_changed_at) {
-        displayNameNote.textContent = 'You can change your display name';
-        displayNameNote.style.color = 'var(--text-secondary)';
+        usernameNote.textContent = 'You can change your username';
+        usernameNote.style.color = 'var(--text-secondary)';
         return;
     }
     
@@ -87,61 +76,62 @@ function checkUsernameChangeAvailability(user) {
     const daysRemaining = Math.ceil(7 - daysSince);
     
     if (daysSince >= 7) {
-        displayNameNote.textContent = 'You can change your display name';
-        displayNameNote.style.color = 'var(--text-secondary)';
+        usernameNote.textContent = 'You can change your username';
+        usernameNote.style.color = 'var(--text-secondary)';
     } else {
-        displayNameNote.textContent = `You can change your display name in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`;
-        displayNameNote.style.color = '#ff6b6b';
+        usernameNote.textContent = `You can change your username in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`;
+        usernameNote.style.color = '#ff6b6b';
     }
 }
 
 async function saveProfile() {
     if (!currentUser) return;
     
-    const displayNameInput = document.getElementById('displayNameInput');
-    const newDisplayName = displayNameInput.value.trim();
+    const usernameInput = document.getElementById('usernameInput');
+    const newUsername = usernameInput.value.trim();
     const messageEl = document.getElementById('profileMessage');
+    const saveUsernameBtn = document.getElementById('saveUsernameBtn');
 
-    if (!newDisplayName) {
-        messageEl.textContent = 'Display name cannot be empty';
-        messageEl.style.color = '#ff6b6b';
-        return;
-    }
+    messageEl.textContent = 'Saving...';
+    messageEl.style.color = 'var(--text-secondary)';
 
-    try {
-        const response = await fetch(`/api/users/${currentUser.id}/display-name`, {
-            method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ display_name: newDisplayName })
-        });
+    // Update Username if changed
+    if (newUsername && newUsername !== currentUser.username) {
+        try {
+            const response = await fetch(`/api/users/${currentUser.id}/username`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: newUsername })
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (response.ok) {
-            messageEl.textContent = 'Display name updated successfully!';
-            messageEl.style.color = 'var(--primary-color)';
-            
-            // Update current user
-            currentUser.display_name = newDisplayName;
-            currentUser.username_changed_at = new Date().toISOString();
-            
-            // Update display
-            populateSettings(currentUser);
-            
-            // Update navbar if function exists
-            if (typeof updateUserDisplay === 'function') {
-                updateUserDisplay(currentUser);
+            if (response.ok) {
+                currentUser.username = newUsername;
+                currentUser.username_changed_at = new Date().toISOString();
+                messageEl.textContent = 'Username updated successfully!';
+                messageEl.style.color = 'var(--primary-color)';
+                
+                // Hide save button after successful save
+                saveUsernameBtn.classList.remove('visible');
+                
+                // Refresh UI
+                populateSettings(currentUser);
+                if (typeof updateUserDisplay === 'function') {
+                    updateUserDisplay(currentUser);
+                }
+            } else {
+                messageEl.textContent = data.error || 'Failed to update username';
+                messageEl.style.color = '#ff6b6b';
             }
-        } else {
-            messageEl.textContent = data.error || 'Failed to update display name';
+        } catch (err) {
+            console.error('Error saving profile:', err);
+            messageEl.textContent = 'Network error';
             messageEl.style.color = '#ff6b6b';
         }
-    } catch (err) {
-        console.error('Error saving profile:', err);
-        messageEl.textContent = 'Error saving profile';
-        messageEl.style.color = '#ff6b6b';
+    } else {
+        messageEl.textContent = 'No changes to save.';
+        messageEl.style.color = 'var(--text-secondary)';
     }
 }
 

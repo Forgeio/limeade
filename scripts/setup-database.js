@@ -8,15 +8,14 @@ async function setupDatabase() {
     await db.query(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
-        username VARCHAR(255) NOT NULL UNIQUE,
-        display_name VARCHAR(50),
-        permanent_id VARCHAR(6) NOT NULL UNIQUE,
+        username VARCHAR(30) UNIQUE,
         email VARCHAR(255) UNIQUE,
         oauth_provider VARCHAR(50) NOT NULL,
         oauth_id VARCHAR(255) NOT NULL,
         avatar_url TEXT,
         control_scheme JSONB DEFAULT '{"left":"ArrowLeft","right":"ArrowRight","up":"ArrowUp","down":"ArrowDown","jump":"ArrowUp","attack":"Space"}',
         username_changed_at TIMESTAMP,
+        needs_username BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW(),
         last_login TIMESTAMP DEFAULT NOW(),
         UNIQUE(oauth_provider, oauth_id)
@@ -50,7 +49,8 @@ async function setupDatabase() {
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
         published BOOLEAN DEFAULT FALSE,
-        published_at TIMESTAMP
+        published_at TIMESTAMP,
+        thumbnail_path VARCHAR(255)
       );
     `);
     console.log('✓ Created levels table');

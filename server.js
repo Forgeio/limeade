@@ -10,8 +10,8 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(
   session({
     secret: process.env.SESSION_SECRET || 'limeade-secret-key-change-in-production',
@@ -40,9 +40,9 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Limeade API is running' });
 });
 
-// Serve login page as default
+// Serve discover page as default
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+  res.sendFile(path.join(__dirname, 'public', 'discover.html'));
 });
 
 // Get available music files
@@ -64,6 +64,14 @@ app.get('/api/music', (req, res) => {
     }).sort(); // Alphabetical order
     
     res.json(musicFiles);
+  });
+});
+
+// Clean URL routing - serve HTML files without .html extension
+const pages = ['discover', 'login', 'profile', 'settings', 'editor', 'play', 'level', 'leaderboards', 'setup-username'];
+pages.forEach(page => {
+  app.get(`/${page}`, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', `${page}.html`));
   });
 });
 

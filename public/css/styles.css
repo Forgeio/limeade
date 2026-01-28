@@ -1,7 +1,7 @@
 /* Material Design Variables */
 :root {
-  --primary-color: #33d639;
-  --secondary-color: #66e36b;
+  --primary-color: #4CAF50;
+  --secondary-color: #81C784;
   --background-color: #f5f5f5;
   --card-color: #ffffff;
   --text-primary: #212121;
@@ -278,7 +278,7 @@ body {
 
 .nav-btn.active {
   color: #000000;
-  background: rgba(24, 217, 43, 0.08);
+  background: rgba(76, 175, 80, 0.08);
 }
 
 .nav-btn .icon {
@@ -357,12 +357,12 @@ body {
 }
 
 .dropdown-item.create {
-  background: #18d92b;
+  background: #4CAF50;
   color: white;
 }
 
 .dropdown-item.create:hover {
-  background: #0e9e1b;
+  background: #388E3C;
 }
 
 .dropdown-item .icon {
@@ -561,7 +561,7 @@ body {
 }
 
 .play-btn {
-  background: #18d92b;
+  background: #4CAF50;
   color: white;
   border: none;
   border-radius: 4px;
@@ -576,7 +576,7 @@ body {
 }
 
 .play-btn:hover {
-  background: #0e9e1b;
+  background: #388E3C;
 }
 
 .draft-card-footer {
@@ -905,12 +905,12 @@ body {
 
 /* Colored buttons in dropdown */
 .burger-dropdown .dropdown-item.test-btn {
-  background-color: #18d92b; /* Green */
+  background-color: #4CAF50; /* Green */
   color: white;
   border: none;
 }
 .burger-dropdown .dropdown-item.test-btn:hover {
-  background-color: #0e9e1b;
+  background-color: #388E3C;
 }
 .burger-dropdown .dropdown-item.test-btn svg {
   fill: white;

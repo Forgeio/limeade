@@ -3,7 +3,6 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const DiscordStrategy = require('passport-discord').Strategy;
 const GitHubStrategy = require('passport-github2').Strategy;
 const db = require('./database');
-const { generateUniquePermanentId, generateUniqueUsername } = require('../utils/userUtils');
 
 // Serialize user for session
 passport.serializeUser((user, done) => {
@@ -46,17 +45,12 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
             return done(null, updated.rows[0]);
           }
 
-          // Create new user
-          const username = await generateUniqueUsername();
-          const permanentId = await generateUniquePermanentId();
-          
+          // Create new user (without username - they'll set it on first login)
           const newUser = await db.query(
-            `INSERT INTO users (username, permanent_id, email, oauth_provider, oauth_id, avatar_url, created_at, last_login)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            `INSERT INTO users (email, oauth_provider, oauth_id, avatar_url, needs_username, created_at, last_login)
+             VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())
              RETURNING *`,
             [
-              username,
-              permanentId,
               profile.emails[0].value,
               'google',
               profile.id,
@@ -107,20 +101,15 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
           }
 
           // Create new user
-          const username = await generateUniqueUsername();
-          const permanentId = await generateUniquePermanentId();
-          
           const avatarUrl = profile.avatar
             ? `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`
             : null;
 
           const newUser = await db.query(
-            `INSERT INTO users (username, permanent_id, email, oauth_provider, oauth_id, avatar_url, created_at, last_login)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            `INSERT INTO users (email, oauth_provider, oauth_id, avatar_url, needs_username, created_at, last_login)
+             VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())
              RETURNING *`,
             [
-              username,
-              permanentId,
               profile.email,
               'discord',
               profile.id,
@@ -170,16 +159,11 @@ if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
           }
 
           // Create new user
-          const username = await generateUniqueUsername();
-          const permanentId = await generateUniquePermanentId();
-          
           const newUser = await db.query(
-            `INSERT INTO users (username, permanent_id, email, oauth_provider, oauth_id, avatar_url, created_at, last_login)
-             VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+            `INSERT INTO users (email, oauth_provider, oauth_id, avatar_url, needs_username, created_at, last_login)
+             VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())
              RETURNING *`,
             [
-              username,
-              permanentId,
               profile.emails && profile.emails[0] ? profile.emails[0].value : null,
               'github',
               profile.id,

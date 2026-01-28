@@ -17,6 +17,8 @@
       display: flex;
       align-items: center;
       gap: 32px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
     }
 
     .profile-avatar-xl {
@@ -98,7 +100,7 @@
   <!-- Navigation Bar -->
   <nav class="navbar">
     <div class="nav-left">
-      <a href="discover.html" class="site-brand">
+      <a href="/" class="site-brand">
         <svg class="icon"><use href="icons.svg#icon-videogame"/></svg>
         <span>Limeade</span>
       </a>
@@ -108,11 +110,11 @@
       </div>
     </div>
     <div class="nav-center">
-      <button class="nav-btn" onclick="navigateTo('discover.html')">
+      <button class="nav-btn" onclick="navigateTo('discover')">
         <svg class="icon"><use href="icons.svg#icon-public"/></svg>
         <span>Discover</span>
       </button>
-      <button class="nav-btn" onclick="navigateTo('leaderboards.html')">
+      <button class="nav-btn" onclick="navigateTo('leaderboards')">
         <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
         <span>Leaderboards</span>
       </button>
@@ -149,23 +151,23 @@
       <div class="profile-avatar-xl" id="profileAvatar">GU</div>
       <div class="profile-info">
         <h1 id="profileName">Guest User</h1>
-        <div class="profile-meta">Member since Jan 2026</div>
+        <div class="profile-meta" id="memberSince">Member since Jan 2026</div>
         
         <div class="stats-row">
           <div class="stat-group">
-            <span class="stat-value">0</span>
+            <span class="stat-value" id="statClears">0</span>
             <span class="stat-label">Levels Cleared</span>
           </div>
           <div class="stat-group">
-            <span class="stat-value">0</span>
+            <span class="stat-value" id="statRecords">0</span>
             <span class="stat-label">World Records</span>
           </div>
           <div class="stat-group">
-            <span class="stat-value">0</span>
+            <span class="stat-value" id="statLevelsCreated">0</span>
             <span class="stat-label">Levels Created</span>
           </div>
           <div class="stat-group">
-            <span class="stat-value">0h</span>
+            <span class="stat-value" id="statPlaytime">0h</span>
             <span class="stat-label">Playtime</span>
           </div>
         </div>

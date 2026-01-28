@@ -69,14 +69,6 @@ async function loadPlayers() {
     
     container.innerHTML = rankedPlayers.map(player => createPlayerCard(player)).join('');
     
-    // Add event listeners for player cards
-    container.querySelectorAll('.player-card').forEach(card => {
-      const playerId = card.dataset.playerId;
-      card.addEventListener('click', () => {
-        viewProfile(playerId);
-      });
-    });
-    
     updatePagination(data.pagination.totalCount);
   } catch (err) {
     console.error('Error loading leaderboard:', err);
@@ -111,7 +103,7 @@ function createPlayerCard(player) {
   const escapedPlaytime = `${playtimeHours}h`;
   
   return `
-    <div class="player-card" data-player-id="${player.id}">
+    <div class="player-card" onclick="viewProfile(${player.id})" style="cursor: pointer;">
       <div class="player-rank ${rankClass}">
         ${player.rank <= 3 ? rankIcon : player.rank}
       </div>
@@ -173,9 +165,7 @@ function nextPage() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// View player profile (placeholder)
+// View player profile
 function viewProfile(playerId) {
-  console.log('Viewing profile:', playerId);
-  // TODO: Navigate to player profile when implemented
-  alert(`Viewing profile for player ${playerId}\nProfile page coming soon!`);
+  window.location.href = `/profile?id=${playerId}`;
 }

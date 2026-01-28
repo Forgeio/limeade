@@ -1,5 +1,7 @@
 const express = require('express');
 const db = require('../config/database');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 // Constants
@@ -54,9 +56,8 @@ router.get('/', async (req, res) => {
     
     // orderBy is from a controlled whitelist, safe to interpolate
     const result = await db.query(
-      `SELECT l.id, l.title, l.description, l.creator_id, l.published_at,
+      `SELECT l.id, l.title, l.description, l.creator_id, l.published_at, l.thumbnail_path,
               u.username as creator_name,
-              COALESCE(u.display_name, u.username) as creator_display_name,
               ls.total_plays, ls.total_clears, ls.total_likes, ls.total_dislikes, 
               ls.world_record_time, ls.clear_rate
        FROM levels l
@@ -136,6 +137,14 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Level data is required' });
     }
 
+    if (title && title.length > 30) {
+      return res.status(400).json({ error: 'Title cannot exceed 30 characters' });
+    }
+
+    if (description && description.length > 255) {
+      return res.status(400).json({ error: 'Description cannot exceed 255 characters' });
+    }
+
     // Check draft limit (max drafts per user)
     const draftCountResult = await db.query(
       'SELECT COUNT(*) FROM levels WHERE creator_id = $1 AND published = false',
@@ -190,7 +199,15 @@ router.put('/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const { title, description, level_data, published } = req.body;
+    const { title, description, level_data, published, thumbnail } = req.body;
+
+    if (title && title.length > 30) {
+      return res.status(400).json({ error: 'Title cannot exceed 30 characters' });
+    }
+
+    if (description && description.length > 255) {
+      return res.status(400).json({ error: 'Description cannot exceed 255 characters' });
+    }
 
     // Check ownership
     const checkResult = await db.query(
@@ -204,6 +221,34 @@ router.put('/:id', async (req, res) => {
 
     if (checkResult.rows[0].creator_id !== req.user.id) {
       return res.status(403).json({ error: 'You do not have permission to edit this level' });
+    }
+
+    // Handle thumbnail if provided
+    let thumbnailPath = null;
+    if (thumbnail) {
+      try {
+        // Expect base64 string: "data:image/png;base64,iVBORw0KGgo..."
+        const matches = thumbnail.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+        if (matches) {
+          const ext = matches[1];
+          const data = matches[2];
+          const buffer = Buffer.from(data, 'base64');
+          
+          const filename = `${id}.${ext}`;
+          // Ensure directory exists
+          const thumbnailsDir = path.join(__dirname, '../../public/thumbnails');
+          if (!fs.existsSync(thumbnailsDir)){
+              fs.mkdirSync(thumbnailsDir, { recursive: true });
+          }
+          
+          const filePath = path.join(thumbnailsDir, filename);
+          fs.writeFileSync(filePath, buffer);
+          thumbnailPath = `/thumbnails/${filename}`;
+        }
+      } catch (e) {
+        console.error('Error saving thumbnail:', e);
+        // Continue without failing (could log warning)
+      }
     }
 
     const updateFields = [];
@@ -221,6 +266,10 @@ router.put('/:id', async (req, res) => {
     if (level_data !== undefined) {
       updateFields.push(`level_data = $${paramCount++}`);
       values.push(JSON.stringify(level_data));
+    }
+    if (thumbnailPath) {
+      updateFields.push(`thumbnail_path = $${paramCount++}`);
+      values.push(thumbnailPath);
     }
     if (published !== undefined) {
       updateFields.push(`published = $${paramCount++}`);

@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../config/database');
-const { sanitizeDisplayName, canChangeUsername } = require('../utils/userUtils');
+const { canChangeUsername } = require('../utils/userUtils');
 const router = express.Router();
 
 // Get user profile by ID
@@ -101,7 +101,7 @@ router.get('/:id/drafts', async (req, res) => {
     }
 
     const result = await db.query(
-      `SELECT id, title, description, level_data, created_at, updated_at
+      `SELECT id, title, description, level_data, created_at, updated_at, thumbnail_path
        FROM levels
        WHERE creator_id = $1 AND published = false
        ORDER BY updated_at DESC
@@ -127,7 +127,6 @@ router.get('/leaderboard/:type', async (req, res) => {
     const offset = (page - 1) * limit;
 
     // Whitelist valid order by options to prevent SQL injection
-    // The orderBy value is only set from this whitelist, never from user input
     const validOrderBy = {
       'clears': 'total_clears DESC',
       'records': 'total_records DESC',
@@ -136,9 +135,10 @@ router.get('/leaderboard/:type', async (req, res) => {
 
     const orderBy = validOrderBy[type] || 'total_clears DESC';
 
-    // Safe to use string interpolation here as orderBy comes from whitelist above
     const result = await db.query(
-      `SELECT u.id, u.username, u.avatar_url, us.*
+      `SELECT u.id, u.username, u.avatar_url, 
+              us.total_clears, us.total_records, us.total_playtime, 
+              us.levels_created, us.total_likes_received
        FROM users u
        INNER JOIN user_stats us ON u.id = us.user_id
        ORDER BY ${orderBy}
@@ -161,53 +161,6 @@ router.get('/leaderboard/:type', async (req, res) => {
     });
   } catch (err) {
     console.error('Error fetching leaderboard:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// Update user's display name
-router.put('/:id/display-name', async (req, res) => {
-  try {
-    if (!req.isAuthenticated()) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const { id } = req.params;
-    const { display_name } = req.body;
-
-    // Check if user is updating their own profile
-    if (req.user.id !== parseInt(id)) {
-      return res.status(403).json({ error: 'You can only update your own profile' });
-    }
-
-    // Check rate limiting
-    const allowed = await canChangeUsername(req.user.id);
-    if (!allowed) {
-      return res.status(429).json({ 
-        error: 'You can only change your display name once every 7 days' 
-      });
-    }
-
-    // Sanitize and validate the display name
-    let sanitizedName;
-    try {
-      sanitizedName = sanitizeDisplayName(display_name);
-    } catch (err) {
-      return res.status(400).json({ error: err.message });
-    }
-
-    // Update the display name
-    const result = await db.query(
-      'UPDATE users SET display_name = $1, username_changed_at = NOW() WHERE id = $2 RETURNING *',
-      [sanitizedName, id]
-    );
-
-    res.json({
-      message: 'Display name updated successfully',
-      user: result.rows[0]
-    });
-  } catch (err) {
-    console.error('Error updating display name:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -260,6 +213,63 @@ router.put('/:id/controls', async (req, res) => {
     });
   } catch (err) {
     console.error('Error updating controls:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update username
+router.put('/:id/username', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { id } = req.params;
+    const { username } = req.body;
+
+    // Check if user is updating their own profile
+    if (req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'You can only update your own profile' });
+    }
+
+    if (!username || username.length < 3 || username.length > 30) {
+      return res.status(400).json({ error: 'Username must be 3-30 characters' });
+    }
+
+    // Validate username format
+    const usernameRegex = /^[a-zA-Z0-9_-]+$/;
+    if (!usernameRegex.test(username)) {
+      return res.status(400).json({ error: 'Username can only contain letters, numbers, underscores, and hyphens' });
+    }
+
+    // Check rate limiting (once per 7 days)
+    const allowed = await canChangeUsername(req.user.id);
+    if (!allowed) {
+      return res.status(429).json({ 
+        error: 'You can only change your username once every 7 days' 
+      });
+    }
+
+    // Check uniqueness (case-insensitive)
+    const existing = await db.query(
+      'SELECT id FROM users WHERE LOWER(username) = LOWER($1) AND id != $2', 
+      [username, id]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(400).json({ error: 'Username is already taken' });
+    }
+
+    const result = await db.query(
+      'UPDATE users SET username = $1, username_changed_at = NOW() WHERE id = $2 RETURNING username',
+      [username, id]
+    );
+
+    res.json({
+      message: 'Username updated successfully',
+      username: result.rows[0].username
+    });
+  } catch (err) {
+    console.error('Error updating username:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
