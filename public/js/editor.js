@@ -1193,8 +1193,13 @@ async function handleDraftChange(e) {
 
 // Handle level name change
 async function handleLevelNameChange(e) {
-  const newTitle = e.target.value.trim();
+  let newTitle = e.target.value.trim();
   
+  if (newTitle.length > 30) {
+    newTitle = newTitle.substring(0, 30);
+    e.target.value = newTitle;
+  }
+
   if (newTitle && newTitle !== editor.levelTitle) {
     editor.levelTitle = newTitle;
     editor.hasUnsavedChanges = true;
@@ -1475,12 +1480,29 @@ function testLevel() {
   }
 
   params.set('from', 'editor');
-  window.location.href = `play.html?${params.toString()}`;
+  window.location.href = `/play?${params.toString()}`;
 }
 
 // Publish level (placeholder)
-function publishLevel() {
-  alert('Publish functionality coming soon!');
+async function publishLevel() {
+    // If we have an ID, assume it's a draft and go to play/test mode with publish intent
+    if (editor.levelId) {
+        // Force save before redirecting
+        editor.hasUnsavedChanges = true;
+        await autoSave();
+        window.location.href = `/play?id=${editor.levelId}&mode=publish`;
+    } else if (editor.isNewDraft) {
+        // New unsaved draft - save it first then redirect
+        editor.hasUnsavedChanges = true;
+        await autoSave();
+        if (editor.levelId) {
+            window.location.href = `/play?id=${editor.levelId}&mode=publish`;
+        } else {
+            alert('Please save the level as a draft first.');
+        }
+    } else {
+        alert('Please save the level as a draft first.');
+    }
 }
 
 // Delete the current draft - Deprecated helper, moving logic to deleteLevelItem

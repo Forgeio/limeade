@@ -23,10 +23,11 @@ window.addEventListener('DOMContentLoaded', async () => {
   const user = checkAuth();
   
   const pathname = window.location.pathname;
-  const isLoginPage = pathname.endsWith('/login.html') || pathname === '/login.html' || pathname === '/';
+  const isLoginPage = pathname.endsWith('/login') || pathname === '/login';
+  const isDiscoverPage = pathname === '/' || pathname.endsWith('/discover');
   
-  if (!user && !isLoginPage) {
-    window.location.href = 'login.html';
+  if (!user && !isLoginPage && !isDiscoverPage) {
+    window.location.href = '/login';
     return;
   }
   
@@ -86,22 +87,22 @@ function setupDropdown() {
 
 // Navigation functions
 function navigateTo(page) {
-  window.location.href = page;
+  window.location.href = '/' + page.replace('.html', '');
 }
 
 function createLevel() {
-  window.location.href = 'editor.html';
+  window.location.href = '/editor';
 }
 
 function openProfile() {
-  window.location.href = 'profile.html';
+  window.location.href = '/profile';
 }
 
 function openSettings() {
-  window.location.href = 'settings.html';
+  window.location.href = '/settings';
 }
 
 function logout() {
   localStorage.removeItem('user');
-  window.location.href = 'login.html';
+  window.location.href = '/login';
 }

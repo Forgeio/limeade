@@ -57,7 +57,8 @@ async function loadLevels() {
       const levelId = card.dataset.levelId;
       card.addEventListener('click', (e) => {
         if (!e.target.closest('.play-btn')) {
-          playLevel(levelId);
+          // Navigate to level detail page
+          window.location.href = `/level?id=${levelId}`;
         }
       });
     });
@@ -97,10 +98,14 @@ function createLevelCard(level) {
     recordTime = `${minutes}:${String(seconds).padStart(2, '0')}`;
   }
   
+  const thumbUrl = level.thumbnail_path ? level.thumbnail_path : '';
+  const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}'); background-size: cover; background-position: center;` : '';
+  const iconStyle = thumbUrl ? 'display: none;' : 'width: 48px; height: 48px;';
+
   return `
     <div class="level-card" data-level-id="${escapedId}">
-      <div class="level-card-image">
-        <svg class="icon" style="width: 48px; height: 48px;"><use href="icons.svg#icon-videogame"/></svg>
+      <div class="level-card-image" style="${thumbStyle}">
+        <svg class="icon" style="${iconStyle}"><use href="icons.svg#icon-videogame"/></svg>
       </div>
       <div class="level-card-content">
         <h3 class="level-card-title">${escapedTitle}</h3>
@@ -168,9 +173,7 @@ function nextPage() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// Play level function (placeholder)
+// Play level function
 function playLevel(levelId) {
-  console.log('Playing level:', levelId);
-  // TODO: Navigate to game player when implemented
-  alert(`Playing level: ${levelId}\nGame player coming soon!`);
+  window.location.href = `/play?id=${levelId}`;
 }

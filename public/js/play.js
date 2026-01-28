@@ -39,9 +39,17 @@ const DEATH_PAUSE_DURATION = 10;
 const DEATH_RISE_DURATION = 3;
 const DEATH_SPIN_SPEED = 0;
 
+// Initialize Web Audio Context
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+const audioCtx = new AudioContext();
+
 const game = {
   canvas: null,
   ctx: null,
+  paused: true, // Start paused
+  started: false, // Has the level started?
+  levelInfo: {}, // Metadata (title, desc, creator)
+  userStatus: { has_beaten: false, has_liked: null }, // User interactions
   width: 0,
   height: 0,
   levelWidth: 0,
@@ -161,31 +169,47 @@ function loadAssets() {
     loadAudio('sounds/token_get.ogg').then(audio => game.assets.soundToken = audio),
     loadAudio('sounds/jump.ogg').then(audio => game.assets.soundJump = audio),
     loadAudio('sounds/land.ogg').then(audio => game.assets.soundLand = audio),
+    loadAudio('sounds/hurt.ogg').then(audio => game.assets.soundHurt = audio),
+    loadAudio('sounds/dead.ogg').then(audio => game.assets.soundDead = audio),
+    loadAudio('sounds/slide_init.ogg').then(audio => game.assets.soundSlideInit = audio),
+    loadAudio('sounds/slide.ogg').then(audio => game.assets.soundSlide = audio),
   ]);
 }
 
 function loadAudio(src) {
-  return new Promise((resolve) => {
-    const audio = new Audio();
-    audio.src = src;
-    audio.oncanplaythrough = () => resolve(audio);
-    audio.onerror = () => {
-        console.warn(`Failed to load audio ${src}`);
-        resolve(null);
-    };
-    // Fallback for some browsers that don't fire canplaythrough immediately without interaction
-    // Just resolving immediately for now to prevent hanging, audio won't play until loaded anyway
-    setTimeout(() => resolve(audio), 100);
+  return new Promise(async (resolve) => {
+    try {
+      const response = await fetch(src);
+      const arrayBuffer = await response.arrayBuffer();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      resolve(audioBuffer);
+    } catch (e) {
+      console.warn(`Failed to load audio ${src}`, e);
+      resolve(null);
+    }
   });
 }
 
-function playSound(audio) {
-  if (audio) {
-    // Clone to ensure overlapping sounds play correctly
-    const clone = audio.cloneNode();
-    clone.volume = 0.4;
-    clone.play().catch(e => console.log('Sound effect play failed', e));
+function playSound(buffer, loop = false) {
+  if (!buffer) return null;
+  
+  // Try to resume context if suspended (autoplay policy)
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(e => console.log('Audio resume failed', e));
   }
+
+  const source = audioCtx.createBufferSource();
+  source.buffer = buffer;
+  source.loop = loop;
+  
+  const gainNode = audioCtx.createGain();
+  gainNode.gain.value = 0.4;
+  
+  source.connect(gainNode);
+  gainNode.connect(audioCtx.destination);
+  source.start(0);
+  
+  return source; // Return source for stopping (looping sounds)
 }
 
 function loadImage(src) {
@@ -200,7 +224,7 @@ function loadImage(src) {
   });
 }
 
-function initGame() {
+async function initGame() {
   game.canvas = document.getElementById('gameCanvas');
   game.ctx = game.canvas.getContext('2d');
 
@@ -209,11 +233,16 @@ function initGame() {
 
   // Ensure window has focus for key events
   window.focus();
+  
+  // Try to resume audio context early (might work on navigation)
+  if (audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(() => {}); // Ignore error on initial load
+  }
 
   resizeCanvas();
   window.addEventListener('resize', resizeCanvas);
 
-  setupControls();
+  await setupControls();
   setupBackButton();
 
   loadAssets().then(() => {
@@ -245,21 +274,63 @@ function resizeCanvas() {
   if (game.ctx) game.ctx.imageSmoothingEnabled = false;
 }
 
-function setupControls() {
+async function setupControls() {
+  // Load user's control scheme
+  const userControls = await loadUserControls();
+  
+  // Default controls
+  const defaults = {
+    left: 'ArrowLeft',
+    right: 'ArrowRight',
+    up: 'ArrowUp',
+    down: 'ArrowDown',
+    jump: 'ArrowUp',
+    attack: 'Space'
+  };
+  
+  // Use user controls or fall back to defaults
+  let keyMap = defaults;
+  if (userControls) {
+    // Validate all required keys exist
+    const requiredKeys = ['left', 'right', 'up', 'down', 'jump', 'attack'];
+    const hasAllKeys = requiredKeys.every(key => userControls[key]);
+    
+    if (hasAllKeys) {
+      keyMap = userControls;
+    } else {
+      console.warn('User controls missing required keys, using defaults');
+    }
+  }
+  
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'ArrowLeft') game.keys.left = true;
-    if (e.code === 'ArrowRight') game.keys.right = true;
-    if (e.code === 'ArrowUp') {
+    // Correctly ignore inputs when typing
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // Allow thumbnail mode to control camera regardless of check below
+    if (game.thumbnailMode) {
+        if (e.code === keyMap.left) game.keys.left = true;
+        if (e.code === keyMap.right) game.keys.right = true;
+        if (e.code === keyMap.up) game.keys.up = true;
+        if (e.code === keyMap.down) game.keys.down = true;
+        return;
+    }
+
+    // Ignore game controls if level is completed (except possibly navigation keys if used for menus, but here we want to stop movement)
+    if (game.levelCompleted || game.paused) return;
+
+    if (e.code === keyMap.left) game.keys.left = true;
+    if (e.code === keyMap.right) game.keys.right = true;
+    if (e.code === keyMap.up || e.code === keyMap.jump) {
       game.keys.up = true;
       if (!game.keys.jump) {
         game.keys.jumpPressed = true; // New press
       }
       game.keys.jump = true;
     }
-    if (e.code === 'ArrowDown') game.keys.down = true;
+    if (e.code === keyMap.down) game.keys.down = true;
     
-    // Space for attack
-    if (e.code === 'Space') {
+    // Attack key
+    if (e.code === keyMap.attack) {
       if (!game.keys.attack) {
         game.keys.attackPressed = true; // New attack press
       }
@@ -270,15 +341,58 @@ function setupControls() {
   });
 
   window.addEventListener('keyup', (e) => {
-    if (e.code === 'ArrowLeft') game.keys.left = false;
-    if (e.code === 'ArrowRight') game.keys.right = false;
-    if (e.code === 'ArrowUp') {
+    // Also handle Enter to start if on start menu, and Esc to pause
+    if (e.code === 'Enter') {
+        if (game.thumbnailMode) {
+            captureThumbnail();
+            return;
+        }
+        if (game.paused) {
+            hidePauseMenu();
+            resumeGame();
+        }
+    }
+    
+    if (e.code === 'Escape') {
+        if (game.thumbnailMode) {
+             // Cancel thumbnail mode
+            document.body.removeChild(document.getElementById('thumbnailOverlay'));
+            game.thumbnailMode = false;
+            showPublishDialog(new URLSearchParams(window.location.search).get('id'));
+            return;
+        }
+        if (!game.paused && !game.levelCompleted) {
+            pauseGame();
+        } else if (game.paused) {
+            hidePauseMenu();
+            resumeGame();
+        }
+    }
+
+    if (e.code === keyMap.left) game.keys.left = false;
+    if (e.code === keyMap.right) game.keys.right = false;
+    if (e.code === keyMap.up || e.code === keyMap.jump) {
       game.keys.up = false;
       game.keys.jump = false;
     }
-    if (e.code === 'ArrowDown') game.keys.down = false;
-    if (e.code === 'Space') game.keys.attack = false;
+    if (e.code === keyMap.down) game.keys.down = false;
+    if (e.code === keyMap.attack) game.keys.attack = false;
   });
+}
+
+// Load user's control scheme from the server
+async function loadUserControls() {
+  try {
+    const response = await fetch('/auth/user');
+    if (!response.ok) {
+      return null;
+    }
+    const user = await response.json();
+    return user.control_scheme || null;
+  } catch (err) {
+    console.error('Error loading user controls:', err);
+    return null;
+  }
 }
 
 function setupBackButton() {
@@ -295,7 +409,7 @@ function setupBackButton() {
 
   backBtn.addEventListener('click', () => {
     if (fromEditor) {
-      const target = levelId ? `editor.html?id=${levelId}` : 'editor.html';
+      const target = levelId ? `/editor?id=${levelId}` : '/editor';
       window.location.href = target;
     } else {
       window.history.back();
@@ -346,10 +460,19 @@ function applyLevelData(level) {
     titleEl.textContent = level.title || 'Level';
   }
 
+  game.currentLevelTitle = level.title || '';
   game.levelData = level.level_data || {};
+  game.levelInfo = level; // Store full metadata
+  
+  // Set initial state
+  game.paused = true;
+  game.started = false;
+  
   resetLevelState();
-
   resetPlayer();
+  
+  // Show start menu
+  showPauseMenu();
 }
 
 function resetLevelState() {
@@ -375,8 +498,14 @@ function resetLevelState() {
       if (playPromise !== undefined) {
         playPromise.catch(e => {
           console.log('Audio autoplay prevented:', e);
+          
+          // Try resuming the WebAudio context as well, just in case
+          if (audioCtx.state === 'suspended') audioCtx.resume();
+
           // Add a one-time click listener to start music if autoplay failed
           const startAudio = () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
             if (game.bgm && game.bgm.paused) {
               game.bgm.play().then(() => {
                 // Remove listeners only after successful play
@@ -473,7 +602,7 @@ function resetPlayer() {
   game.player.touchingWallLeft = false;
   game.player.touchingWallRight = false;
   game.player.wallCoyoteTimer = 0;
-  game.player.wallCoyoteDirection = 0;
+  game.player.wallCoyoteDirection = 0; // -1 for left wall, 1 for right wall
   game.player.canWallJumpLeft = true;
   game.player.canWallJumpRight = true;
   game.player.wallJumpCooldown = 0;
@@ -508,17 +637,24 @@ function gameLoop(timestamp) {
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
 
-  accumulator += deltaTime;
-  
-  // Prevent spiral of death
-  if (accumulator > 200) accumulator = 200;
+  if (!game.paused) {
+    accumulator += deltaTime;
+    
+    // Prevent spiral of death
+    if (accumulator > 200) accumulator = 200;
 
-  while (accumulator >= TIMESTEP) {
-    update();
-    accumulator -= TIMESTEP;
+    while (accumulator >= TIMESTEP) {
+      update();
+      accumulator -= TIMESTEP;
+    }
+  } else if (game.thumbnailMode) {
+      updateThumbnailCamera();
   }
   
   render();
+  // If paused, render opacity overlay or menu?
+  // The menu itself is HTML overlay so canvas render underneath is fine.
+  
   requestAnimationFrame(gameLoop);
 }
 
@@ -609,6 +745,8 @@ function updateCoins() {
 }
 
 function updatePlayer() {
+  if (game.levelCompleted) return;
+
   const player = game.player;
   const maxSpeed = PLAYER_SPEED;
 
@@ -788,6 +926,8 @@ function getAttackBox(player) {
 }
 
 function handleAttack() {
+  if (game.levelCompleted) return;
+
   const player = game.player;
 
   if (player.attackCooldown > 0) player.attackCooldown--;
@@ -986,10 +1126,18 @@ function tryWallJump(player) {
 function handleWallSlide(player) {
   if (player.onGround) {
     player.wallStickTimer = 0;
+    stopSlideSound();
     return;
   }
   
   if (isPlayerSlidingOnWall(player) && player.velY > 0) {
+    // Start playback if just started sliding
+    if (!game.sliding) {
+        game.sliding = true;
+        playSound(game.assets.soundSlideInit);
+        playSlideLoop();
+    }
+
     // Apply wall stick for a brief moment
     if (player.wallStickTimer < WALL_STICK_FRAMES) {
       player.wallStickTimer++;
@@ -1002,7 +1150,31 @@ function handleWallSlide(player) {
     }
   } else {
     player.wallStickTimer = 0;
+    stopSlideSound();
   }
+}
+
+function playSlideLoop() {
+  if (game.slideLoopPlaying) return;
+  
+  if (game.assets.soundSlide) {
+      // Use new playSound which handles WebAudio source creation
+      game.slideLoopNode = playSound(game.assets.soundSlide, true);
+      game.slideLoopPlaying = true;
+  }
+}
+
+function stopSlideSound() {
+    game.sliding = false;
+    if (game.slideLoopPlaying && game.slideLoopNode) {
+        try {
+          game.slideLoopNode.stop();
+        } catch (e) {
+          // Ignore if already stopped
+        }
+        game.slideLoopNode = null;
+        game.slideLoopPlaying = false;
+    }
 }
 
 function movePlayerX(dx) {
@@ -1172,6 +1344,9 @@ function updateDeathAnimation() {
 }
 
 function checkPlayerHazards() {
+  // Can't die if you've already won or are already dead
+  if (game.player.dead || game.levelCompleted) return;
+
   const player = game.player;
 
   // Check bottom bound (kills player only when completely out of bounds)
@@ -1200,9 +1375,13 @@ function checkPlayerHazards() {
 }
 
 function killPlayer() {
+  playSound(game.assets.soundHurt);
+  playSound(game.assets.soundDead);
   game.player.dead = true;
   game.player.deathTimer = 0;
   game.player.deathVelY = 0;
+  
+  stopSlideSound();
   game.player.velX = 0;
   game.player.velY = 0;
   
@@ -1239,16 +1418,28 @@ function render() {
 }
 
 function getHurtbox(player) {
-  const size = TILE_SIZE;
-  const baseX = player.x + player.width / 2 - size / 2;
-  const baseY = player.y + player.height / 2 - size / 2;
+  const reach = TILE_SIZE; // 16
+  const thickness = 10; // Reduced from 16 to avoid grazing ground/walls
+  const cx = player.x + player.width / 2;
+  const cy = player.y + player.height / 2;
 
-  return {
-    x: baseX + player.attackDir.x * size,
-    y: baseY + player.attackDir.y * size,
-    width: size,
-    height: size
-  };
+  if (player.attackDir.y !== 0) {
+    // Vertical Attack
+    return {
+      x: cx - thickness / 2,
+      y: cy - reach / 2 + (player.attackDir.y * reach),
+      width: thickness,
+      height: reach
+    };
+  } else {
+    // Horizontal Attack
+    return {
+      x: cx - reach / 2 + (player.attackDir.x * reach),
+      y: cy - thickness / 2,
+      width: reach,
+      height: thickness
+    };
+  }
 }
 
 function renderHurtbox() {
@@ -1752,6 +1943,7 @@ function showLevelCompleteDialog() {
   const urlParams = new URLSearchParams(window.location.search);
   const fromEditor = urlParams.get('from') === 'editor';
   const levelId = urlParams.get('id');
+  const mode = urlParams.get('mode');
   
   if (fromEditor) {
     // Return to editor after short delay
@@ -1759,8 +1951,13 @@ function showLevelCompleteDialog() {
       const target = levelId ? `editor.html?id=${levelId}` : 'editor.html';
       window.location.href = target;
     }, 1500);
+  } else if (mode === 'publish') {
+    // Show publish dialog
+    showPublishDialog(levelId);
   } else {
-    // Show completion dialog for played levels
+    // Show completion dialog for played levels and record stats
+    recordLevelCompletion(levelId);
+    
     const seconds = Math.floor(game.timer.finalTime / 1000);
     const ms = Math.floor((game.timer.finalTime % 1000) / 10);
     const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
@@ -1792,9 +1989,20 @@ function showLevelCompleteDialog() {
     dialog.innerHTML = `
       <h2 style="margin: 0 0 16px 0; font-size: 32px; color: #51cf66;">Level Complete!</h2>
       <p style="font-size: 24px; margin: 16px 0; color: #212121;">Time: ${timeString}s</p>
-      <button id="closeDialog" style="
+      <button id="continueBtn" style="
         background: #51cf66;
         color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+        margin-right: 8px;
+      ">Continue to Level Page</button>
+      <button id="closeDialog" style="
+        background: #ddd;
+        color: #333;
         border: none;
         padding: 12px 24px;
         font-size: 16px;
@@ -1807,9 +2015,650 @@ function showLevelCompleteDialog() {
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     
+    document.getElementById('continueBtn').addEventListener('click', () => {
+      window.location.href = `/level?id=${levelId}`;
+    });
+    
     document.getElementById('closeDialog').addEventListener('click', () => {
       document.body.removeChild(overlay);
     });
+  }
+}
+
+// Record level completion
+async function recordLevelCompletion(levelId) {
+  if (!levelId) return;
+  
+  const completionTime = Math.floor(game.timer.finalTime / 1000);
+  
+  try {
+    await fetch(`/api/levels/${levelId}/play`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        completed: true,
+        completion_time: completionTime
+      })
+    });
+  } catch (err) {
+    console.error('Error recording completion:', err);
+  }
+}
+
+// Show publish dialog
+function showPublishDialog(levelId) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+  
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    padding: 32px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+  `;
+  
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 24px 0; font-size: 28px; color: #51cf66;">Publish Your Level</h2>
+    <div style="margin-bottom: 16px; text-align: left;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Level Title (Max 30 chars)</label>
+      <input type="text" id="publishTitle" maxlength="30" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      " placeholder="Enter level title" value="${(game.currentLevelTitle || '').replace(/"/g, '&quot;')}">
+    </div>
+    <div style="margin-bottom: 16px; text-align: left;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Description (Max 255 chars)</label>
+      <textarea id="publishDescription" maxlength="255" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        resize: vertical;
+        min-height: 80px;
+        box-sizing: border-box;
+      " placeholder="Describe your level..."></textarea>
+    </div>
+    <div style="margin-bottom: 16px; text-align: left; opacity: 0.5;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Optional Timer (Coming Soon)</label>
+      <input type="number" disabled style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      " placeholder="Time limit in seconds">
+    </div>
+    <div style="margin-bottom: 24px;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Thumbnail</label>
+      <div style="display: flex; gap: 16px; align-items: flex-start;">
+        <div id="thumbnailPreview" style="
+          width: 160px; 
+          height: 90px; 
+          background: #f5f5f5; 
+          border: 1px solid #ddd; 
+          border-radius: 4px;
+          display: flex; 
+          align-items: center; 
+          justify-content: center;
+          overflow: hidden;
+        ">
+          ${game.thumbnailData ? `<img src="${game.thumbnailData}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="font-size: 12px; color: #777;">No Image</span>'}
+        </div>
+        <button id="setThumbnailBtn" type="button" style="
+          background: #f5f5f5;
+          color: #333;
+          border: 1px solid #ddd;
+          padding: 8px 16px;
+          font-size: 14px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-family: Roboto, sans-serif;
+        ">Set Thumbnail</button>
+      </div>
+    </div>
+    
+    <div style="margin-bottom: 24px; text-align: left; opacity: 0.5;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Clear Condition (Coming Soon)</label>
+      <select disabled style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      ">
+        <option>None</option>
+        <option>Collect all coins</option>
+        <option>Don't touch the ground</option>
+      </select>
+    </div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button id="cancelPublish" style="
+        background: #ddd;
+        color: #333;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Cancel</button>
+      <button id="confirmPublish" style="
+        background: #51cf66;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Publish</button>
+    </div>
+  `;
+  
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  
+  // Thumbnail button handler
+  document.getElementById('setThumbnailBtn').addEventListener('click', () => {
+    // Save current form state
+    game.publishFormData = {
+      title: document.getElementById('publishTitle').value,
+      description: document.getElementById('publishDescription').value
+    };
+    
+    document.body.removeChild(overlay);
+    
+    startThumbnailMode((dataUrl) => {
+        game.thumbnailData = dataUrl;
+        showPublishDialog(levelId);
+    });
+  });
+
+  document.getElementById('cancelPublish').addEventListener('click', () => {
+    document.body.removeChild(overlay);
+    window.location.href = '/profile';
+  });
+  
+  document.getElementById('confirmPublish').addEventListener('click', async () => {
+    const title = document.getElementById('publishTitle').value.trim();
+    const description = document.getElementById('publishDescription').value.trim();
+    
+    // Client-side validation
+    if (!title) {
+      alert('Please enter a title for your level');
+      return;
+    }
+    
+    if (title.length > 255) {
+      alert('Title must be 255 characters or less');
+      return;
+    }
+    
+    if (description.length > 5000) {
+      alert('Description must be 5000 characters or less');
+      return;
+    }
+    
+    try {
+      const response = await fetch(`/api/levels/${levelId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          published: true,
+          thumbnail: game.thumbnailData
+        })
+      });
+      
+      if (response.ok) {
+        document.body.removeChild(overlay);
+        // Show success message
+        const successOverlay = document.createElement('div');
+        successOverlay.style.cssText = overlay.style.cssText;
+        successOverlay.innerHTML = `
+          <div style="${dialog.style.cssText}">
+            <h2 style="margin: 0 0 16px 0; font-size: 32px; color: #4CAF50;">Level Published!</h2>
+            <p style="margin: 16px 0;">Your level is now available for everyone to play.</p>
+            <button onclick="window.location.href='/profile'" style="
+              background: #4CAF50;
+              color: white;
+              border: none;
+              padding: 12px 24px;
+              font-size: 16px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-family: Roboto, sans-serif;
+            ">Back to Profile</button>
+          </div>
+        `;
+        document.body.appendChild(successOverlay);
+      } else {
+        const data = await response.json();
+        alert(data.error || 'Failed to publish level');
+      }
+    } catch (err) {
+      console.error('Error publishing level:', err);
+      alert('Error publishing level');
+    }
+  });
+
+  // Restore form data if exists
+  if (game.publishFormData) {
+      document.getElementById('publishTitle').value = game.publishFormData.title;
+      document.getElementById('publishDescription').value = game.publishFormData.description;
+  }
+}
+
+function startThumbnailMode(callback) {
+    game.thumbnailMode = true;
+    game.thumbnailCallback = callback;
+    game.paused = true; // Ensure paused
+    
+    // Create UI overlay
+    const overlay = document.createElement('div');
+    overlay.id = 'thumbnailOverlay';
+    overlay.style.cssText = `
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        display: flex;
+        align-items: center; justify-content: center;
+        pointer-events: none; /* Let clicks pass through if we want mouse drag, but key nav is fine */
+        z-index: 2000;
+    `;
+    
+    // Viewport frame (16:9)
+    const frame = document.createElement('div');
+    frame.id = 'thumbnailFrame';
+    frame.style.cssText = `
+        width: 60%;
+        max-width: 640px;
+        aspect-ratio: 16/9;
+        border: 4px solid #4CAF50;
+        box-shadow: 0 0 0 9999px rgba(0,0,0,0.7);
+        position: relative;
+    `;
+    
+    const instructions = document.createElement('div');
+    instructions.innerHTML = `
+        <div style="background: rgba(0,0,0,0.8); color: white; padding: 16px; border-radius: 4px; text-align: center;">
+            <div style="font-weight: bold; font-size: 18px; margin-bottom: 8px;">Thumbnail Selection</div>
+            <div>Use <b>Arrow Keys</b> or <b>WASD</b> to move camera</div>
+            <div>Press <b>Enter</b> to Capture</div>
+        </div>
+    `;
+    instructions.style.cssText = `
+        position: absolute;
+        bottom: -100px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100%;
+        display: flex;
+        justify-content: center;
+    `;
+    
+    frame.appendChild(instructions);
+    overlay.appendChild(frame);
+    document.body.appendChild(overlay);
+}
+
+function updateThumbnailCamera() {
+    const speed = 8;
+    
+    if (game.keys.left) game.camera.x -= speed;
+    if (game.keys.right) game.camera.x += speed;
+    if (game.keys.up) game.camera.y -= speed;
+    if (game.keys.down) game.camera.y += speed;
+    
+    // Clamp
+    game.camera.x = Math.max(0, Math.min(game.camera.x, game.levelWidth - game.width));
+    game.camera.y = Math.max(0, Math.min(game.camera.y, game.levelHeight - game.height));
+}
+
+function captureThumbnail() {
+    // Create offscreen canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 180;
+    const ctx = canvas.getContext('2d');
+    
+    // Get dimensions relative to viewport
+    const frame = document.getElementById('thumbnailFrame');
+    if (!frame) return; // Should not happen
+    
+    const frameRect = frame.getBoundingClientRect();
+    const gameRect = game.canvas.getBoundingClientRect();
+    
+    // Calculate mapping from Screen Pixels to Game Canvas Pixels
+    const scaleX = game.canvas.width / gameRect.width;
+    const scaleY = game.canvas.height / gameRect.height;
+    
+    // Source rectangle in Game Canvas Pixels
+    const sourceX = (frameRect.left - gameRect.left) * scaleX;
+    const sourceY = (frameRect.top - gameRect.top) * scaleY;
+    const sourceW = frameRect.width * scaleX;
+    const sourceH = frameRect.height * scaleY;
+    
+    // Capture
+    ctx.imageSmoothingEnabled = false; // Keep pixel art look if we can, though scaling down usually implies smoothing.
+    // Actually for thumbnails, smoothing is better.
+    ctx.imageSmoothingEnabled = true;
+    
+    ctx.drawImage(game.canvas, sourceX, sourceY, sourceW, sourceH, 0, 0, 320, 180);
+    
+    const dataUrl = canvas.toDataURL('image/png', 0.9);
+    
+    // Cleanup
+    document.body.removeChild(document.getElementById('thumbnailOverlay'));
+    game.thumbnailMode = false;
+    
+    if (game.thumbnailCallback) {
+        game.thumbnailCallback(dataUrl);
+        game.thumbnailCallback = null;
+    }
+}
+
+
+
+// --- Pause Menu Handling ---
+
+function pauseGame() {
+  game.paused = true;
+  game.pauseStartTime = Date.now();
+  if (game.bgm && !game.bgm.paused) {
+    game.bgm.pause();
+  }
+  showPauseMenu();
+}
+
+function resumeGame() {
+  game.paused = false;
+  
+  // If this is the very first start
+  if (!game.started) {
+      game.started = true;
+      // Reset timer start point so we don't count the time spent in menu
+      game.startTime = Date.now(); 
+  } else if (game.pauseStartTime) {
+      // Adjust start time to account for pause duration so the timer effectively stops
+      const pauseDuration = Date.now() - game.pauseStartTime;
+      game.startTime += pauseDuration;
+      game.pauseStartTime = null;
+  }
+
+  // Also try to start music if not playing (unlock audio context)
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  if (game.bgm && game.bgm.paused) {
+      game.bgm.play().catch(e => {});
+  }
+}
+
+function showPauseMenu() {
+  // If menu already exists, just show it
+  let menu = document.getElementById('pauseMenu');
+  
+  if (!menu) {
+    createPauseMenu();
+    menu = document.getElementById('pauseMenu');
+  }
+  
+  // Update content just in case
+  updatePauseMenuContent();
+  
+  menu.style.display = 'flex';
+}
+
+function hidePauseMenu() {
+  const menu = document.getElementById('pauseMenu');
+  if (menu) {
+    menu.style.display = 'none';
+  }
+}
+
+function createPauseMenu() {
+  const menu = document.createElement('div');
+  menu.id = 'pauseMenu';
+  menu.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 2000;
+    color: white;
+    font-family: Roboto, sans-serif;
+  `;
+  
+  // Content container
+  const container = document.createElement('div');
+  container.className = 'pause-content';
+  container.style.cssText = `
+    background: white;
+    border-radius: 8px;
+    padding: 32px;
+    width: 90%;
+    max-width: 500px;
+    color: #212121;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    position: relative;
+  `;
+  
+  // Title
+  const title = document.createElement('h2');
+  title.id = 'pauseTitle';
+  title.style.cssText = `
+    margin: 0 0 8px 0;
+    color: #4CAF50;
+    font-size: 28px;
+  `;
+  title.textContent = 'Level Title';
+
+  // Creator
+  const creator = document.createElement('div');
+  creator.id = 'pauseCreator';
+  creator.style.cssText = `
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 24px;
+    color: #757575;
+  `;
+  
+  // Stats Row (Record, Likes)
+  const statsRow = document.createElement('div');
+  statsRow.style.cssText = `
+    display: flex;
+    justify-content: space-around;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f5f5f5;
+    border-radius: 8px;
+  `;
+  
+  const recordBox = document.createElement('div');
+  recordBox.innerHTML = `
+    <div style="font-size: 12px; color: #757575;">Record</div>
+    <div id="pauseRecord" style="font-weight: bold; font-size: 18px;">--:--</div>
+  `;
+  
+  const likeBox = document.createElement('div');
+  likeBox.innerHTML = `
+    <div style="font-size: 12px; color: #757575;">Likes</div>
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <svg fill="#4caf50" height="16px" width="16px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 487.622 487.622" xml:space="preserve"><g><path d="M473.079,228.694l-89.967-89.967c-17.391-17.391-41.566-24.647-65.047-21.758c1.372-4.102,2.355-8.243,2.946-12.428 l10.82-76.657c3.961-28.056-5.06-56.124-24.167-75.231C288.587-16.425,258.113-24.234,228.17,31.79l-43.085,80.707 c-22.129,41.442-70.264,65.372-117.262,60.89v26.046c43.435,0,78.784,35.349,78.783,78.784v27.915 c0,43.434-35.349,78.784-78.783,78.784v70.814h106.012l275.601-52.553C472.19,398.665,487.893,379.25,487.58,356.18 l-2.618-100.95C484.706,243.619,480.016,235.631,473.079,228.694z M397.773,353.945l-221.785,42.292 c-0.655,0.125-1.328,0.191-2.007,0.191c-1.332,0-2.656-0.252-3.924-0.742c-2.486-0.961-4.639-2.67-6.196-4.918l-12.353-17.844 c-8.084-11.678-20.849-19.166-35.034-20.697l0.188-164.845c22.518-2.607,43.084-13.882,56.761-31.543l35.865-67.185 c20.941-39.182,34.42-30.824,37.362-27.882c9.641,9.642,14.192,23.804,12.193,37.957l-10.82,76.657 c-2.434,17.24,5.497,34.809,20.485,44.97c14.989,10.161,34.408,10.806,50.142,1.383l109.916,109.916 c7.843,7.843,8.74,20.725,1.967,29.743c-33.197,44.209,1.492,67.63,13.623,73.136c7.091,3.218,12.871,9.25,16.273,16.401 C464.385,357.755,417.89,350.109,397.773,353.945z"/></g></svg>
+        <span id="pauseLikes" style="font-weight: bold; font-size: 18px;">0</span>
+    </div>
+  `;
+  // Shortened the generic SVG icon for brevity in replacement string, assumed inline SVG or just text would be fine but user wanted it to look like the site
+  // The site uses a lot of JS generated SVG or external. I put an inline SVG path for a generic thumb up.
+  
+  statsRow.appendChild(recordBox);
+  statsRow.appendChild(likeBox);
+
+  // Description
+  const desc = document.createElement('div');
+  desc.id = 'pauseDesc';
+  desc.style.cssText = `
+    margin-bottom: 32px;
+    line-height: 1.5;
+    max-height: 100px;
+    overflow-y: auto;
+    font-size: 14px;
+    color: #424242;
+    padding: 0 8px;
+  `;
+  desc.textContent = '';
+
+  // Buttons
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = `
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+  `;
+  
+  const backBtn = document.createElement('button');
+  backBtn.textContent = 'Exit Level';
+  backBtn.style.cssText = `
+    padding: 12px 24px;
+    border: 1px solid #e0e0e0;
+    background: transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    color: #757575;
+    font-weight: 500;
+  `;
+  backBtn.onmouseover = () => backBtn.style.background = '#f5f5f5';
+  backBtn.onmouseout = () => backBtn.style.background = 'transparent';
+  
+  backBtn.onclick = () => {
+      const id = new URLSearchParams(window.location.search).get('id');
+      if (id && !id.startsWith('local-')) {
+          window.location.href = `/level?id=${id}`;
+      } else {
+          window.location.href = '/';
+      }
+  };
+
+  const startBtn = document.createElement('button');
+  startBtn.id = 'pauseStartBtn';
+  startBtn.textContent = 'Resume';
+  startBtn.style.cssText = `
+    padding: 12px 32px;
+    border: none;
+    background: #4CAF50;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    color: white;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    transition: background 0.2s;
+  `;
+  startBtn.onmouseover = () => startBtn.style.background = '#388E3C';
+  startBtn.onmouseout = () => startBtn.style.background = '#4CAF50';
+  
+  startBtn.onclick = () => {
+      hidePauseMenu();
+      resumeGame();
+  };
+
+  btnRow.appendChild(backBtn);
+  btnRow.appendChild(startBtn);
+  
+  // Assemble
+  container.appendChild(title);
+  container.appendChild(creator);
+  container.appendChild(statsRow);
+  container.appendChild(desc);
+  container.appendChild(btnRow);
+  menu.appendChild(container);
+  
+  document.body.appendChild(menu);
+}
+
+function updatePauseMenuContent() {
+  const info = game.levelInfo || {};
+  
+  // Title
+  const titleEl = document.getElementById('pauseTitle');
+  if (titleEl) titleEl.textContent = info.title || game.currentLevelTitle || 'Untitled Level';
+  
+  // Creator
+  const creatorEl = document.getElementById('pauseCreator');
+  if (creatorEl) {
+      if (info.creator_name) {
+          const initials = (info.creator_name || 'GU').substring(0, 2).toUpperCase();
+
+          creatorEl.innerHTML = `
+            <a href="/profile?id=${info.creator_id}" style="text-decoration: none; display: flex; align-items: center; gap: 8px; color: inherit;">
+                <div style="width: 32px; height: 32px; background: #eee; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; color: #555;">
+                  ${initials}
+                </div>
+                <span style="font-weight: 500;">${info.creator_name}</span>
+            </a>
+          `;
+      } else {
+          creatorEl.innerHTML = '<span style="font-style: italic;">Local Draft</span>';
+      }
+  }
+  
+  // Description
+  const descEl = document.getElementById('pauseDesc');
+  if (descEl) descEl.textContent = info.description || 'No description provided.';
+  
+  // Stats
+  const likesEl = document.getElementById('pauseLikes');
+  if (likesEl) likesEl.textContent = info.total_likes || 0;
+  
+  const recordEl = document.getElementById('pauseRecord');
+  if (recordEl) {
+      if (info.world_record_time) {
+        const minutes = Math.floor(info.world_record_time / 60);
+        const seconds = info.world_record_time % 60;
+        recordEl.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+      } else {
+        recordEl.textContent = '--:--';
+      }
+  }
+  
+  // Button Text
+  const startBtn = document.getElementById('pauseStartBtn');
+  if (startBtn) {
+      startBtn.textContent = game.started ? 'Resume' : 'Start Level';
   }
 }
 

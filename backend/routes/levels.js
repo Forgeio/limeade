@@ -1,5 +1,7 @@
 const express = require('express');
 const db = require('../config/database');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 
 // Constants
@@ -13,33 +15,66 @@ router.get('/', async (req, res) => {
     const limit = parseInt(req.query.limit) || 12;
     const offset = (page - 1) * limit;
 
-    // Whitelist valid filter options to prevent SQL injection
-    // The orderBy value is only set from this whitelist, never from user input
-    const validOrderBy = {
-      'hot': 'ls.total_plays DESC, l.published_at DESC',
-      'top': 'ls.total_likes DESC',
-      'new': 'l.published_at DESC'
-    };
+    let orderBy, dateFilter, dateValue;
+    
+    // Define filter logic
+    if (filter === 'new') {
+      // Most recent levels
+      orderBy = 'l.published_at DESC';
+      dateFilter = null;
+      dateValue = null;
+    } else if (filter === 'hot') {
+      // Highest rated levels of the week
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      dateFilter = 'AND l.published_at >= $3';
+      dateValue = oneWeekAgo.toISOString();
+      orderBy = 'ls.total_likes DESC, l.published_at DESC';
+    } else if (filter === 'top') {
+      // Highest rated levels of the year
+      const oneYearAgo = new Date();
+      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+      dateFilter = 'AND l.published_at >= $3';
+      dateValue = oneYearAgo.toISOString();
+      orderBy = 'ls.total_likes DESC';
+    } else {
+      // Default to hot
+      const oneWeekAgo = new Date();
+      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+      dateFilter = 'AND l.published_at >= $3';
+      dateValue = oneWeekAgo.toISOString();
+      orderBy = 'ls.total_likes DESC, l.published_at DESC';
+    }
 
-    const orderBy = validOrderBy[filter] || validOrderBy['hot'];
-
-    // Safe to use string interpolation here as orderBy comes from whitelist above
+    // Build query with parameterized values
+    const queryParams = [limit, offset];
+    if (dateValue) {
+      queryParams.push(dateValue);
+    }
+    
+    const whereClause = dateFilter || '';
+    
+    // orderBy is from a controlled whitelist, safe to interpolate
     const result = await db.query(
-      `SELECT l.id, l.title, l.description, l.creator_id, l.published_at,
+      `SELECT l.id, l.title, l.description, l.creator_id, l.published_at, l.thumbnail_path,
               u.username as creator_name,
               ls.total_plays, ls.total_clears, ls.total_likes, ls.total_dislikes, 
               ls.world_record_time, ls.clear_rate
        FROM levels l
        LEFT JOIN level_stats ls ON l.id = ls.level_id
        LEFT JOIN users u ON l.creator_id = u.id
-       WHERE l.published = true
+       WHERE l.published = true ${whereClause}
        ORDER BY ${orderBy}
        LIMIT $1 OFFSET $2`,
-      [limit, offset]
+      queryParams
     );
 
+    // Count query with same date filter
+    const countParams = dateValue ? [dateValue] : [];
+    const countDateFilter = dateValue ? 'AND l.published_at >= $1' : '';
     const countResult = await db.query(
-      'SELECT COUNT(*) FROM levels WHERE published = true'
+      `SELECT COUNT(*) FROM levels l WHERE l.published = true ${countDateFilter}`,
+      countParams
     );
 
     const totalCount = parseInt(countResult.rows[0].count);
@@ -102,6 +137,14 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Level data is required' });
     }
 
+    if (title && title.length > 30) {
+      return res.status(400).json({ error: 'Title cannot exceed 30 characters' });
+    }
+
+    if (description && description.length > 255) {
+      return res.status(400).json({ error: 'Description cannot exceed 255 characters' });
+    }
+
     // Check draft limit (max drafts per user)
     const draftCountResult = await db.query(
       'SELECT COUNT(*) FROM levels WHERE creator_id = $1 AND published = false',
@@ -156,7 +199,15 @@ router.put('/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const { title, description, level_data, published } = req.body;
+    const { title, description, level_data, published, thumbnail } = req.body;
+
+    if (title && title.length > 30) {
+      return res.status(400).json({ error: 'Title cannot exceed 30 characters' });
+    }
+
+    if (description && description.length > 255) {
+      return res.status(400).json({ error: 'Description cannot exceed 255 characters' });
+    }
 
     // Check ownership
     const checkResult = await db.query(
@@ -170,6 +221,34 @@ router.put('/:id', async (req, res) => {
 
     if (checkResult.rows[0].creator_id !== req.user.id) {
       return res.status(403).json({ error: 'You do not have permission to edit this level' });
+    }
+
+    // Handle thumbnail if provided
+    let thumbnailPath = null;
+    if (thumbnail) {
+      try {
+        // Expect base64 string: "data:image/png;base64,iVBORw0KGgo..."
+        const matches = thumbnail.match(/^data:image\/([a-zA-Z0-9]+);base64,(.+)$/);
+        if (matches) {
+          const ext = matches[1];
+          const data = matches[2];
+          const buffer = Buffer.from(data, 'base64');
+          
+          const filename = `${id}.${ext}`;
+          // Ensure directory exists
+          const thumbnailsDir = path.join(__dirname, '../../public/thumbnails');
+          if (!fs.existsSync(thumbnailsDir)){
+              fs.mkdirSync(thumbnailsDir, { recursive: true });
+          }
+          
+          const filePath = path.join(thumbnailsDir, filename);
+          fs.writeFileSync(filePath, buffer);
+          thumbnailPath = `/thumbnails/${filename}`;
+        }
+      } catch (e) {
+        console.error('Error saving thumbnail:', e);
+        // Continue without failing (could log warning)
+      }
     }
 
     const updateFields = [];
@@ -188,11 +267,23 @@ router.put('/:id', async (req, res) => {
       updateFields.push(`level_data = $${paramCount++}`);
       values.push(JSON.stringify(level_data));
     }
+    if (thumbnailPath) {
+      updateFields.push(`thumbnail_path = $${paramCount++}`);
+      values.push(thumbnailPath);
+    }
     if (published !== undefined) {
       updateFields.push(`published = $${paramCount++}`);
       values.push(published);
       if (published) {
         updateFields.push(`published_at = NOW()`);
+        
+        // Create level stats entry if publishing for the first time
+        await db.query(
+          `INSERT INTO level_stats (level_id, total_plays, total_clears, total_likes, total_dislikes, clear_rate)
+           VALUES ($1, 0, 0, 0, 0, 0.00)
+           ON CONFLICT (level_id) DO NOTHING`,
+          [id]
+        );
       }
     }
 
@@ -257,6 +348,18 @@ router.post('/:id/like', async (req, res) => {
       return res.status(400).json({ error: 'is_like must be a boolean' });
     }
 
+    // Check if user has beaten the level
+    const beatCheck = await db.query(
+      'SELECT has_beaten FROM level_plays WHERE level_id = $1 AND user_id = $2 AND has_beaten = true LIMIT 1',
+      [id, req.user.id]
+    );
+
+    if (beatCheck.rows.length === 0) {
+      return res.status(403).json({ 
+        error: 'You must beat the level before you can rate it' 
+      });
+    }
+
     // Insert or update like
     await db.query(
       `INSERT INTO level_likes (level_id, user_id, is_like)
@@ -302,9 +405,9 @@ router.post('/:id/play', async (req, res) => {
 
     // Record the play
     await db.query(
-      `INSERT INTO level_plays (level_id, user_id, completed, completion_time)
-       VALUES ($1, $2, $3, $4)`,
-      [id, req.user.id, completed || false, completion_time || null]
+      `INSERT INTO level_plays (level_id, user_id, completed, completion_time, has_beaten)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [id, req.user.id, completed || false, completion_time || null, completed || false]
     );
 
     // Update level stats
@@ -335,10 +438,58 @@ router.post('/:id/play', async (req, res) => {
         }
       }
     }
+    
+    // Update user stats if level was cleared
+    if (completed) {
+      await db.query(
+        `INSERT INTO user_stats (user_id, total_clears)
+         VALUES ($1, 1)
+         ON CONFLICT (user_id)
+         DO UPDATE SET total_clears = user_stats.total_clears + 1`,
+        [req.user.id]
+      );
+    }
 
-    res.json({ message: 'Play recorded successfully' });
+    res.json({ 
+      message: 'Play recorded successfully',
+      has_beaten: completed || false
+    });
   } catch (err) {
     console.error('Error recording play:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get user's interaction with a level (has beaten, like status)
+router.get('/:id/user-status', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.json({ 
+        has_beaten: false,
+        has_liked: null
+      });
+    }
+
+    const { id } = req.params;
+
+    // Check if user has beaten the level
+    const beatCheck = await db.query(
+      'SELECT has_beaten FROM level_plays WHERE level_id = $1 AND user_id = $2 AND has_beaten = true LIMIT 1',
+      [id, req.user.id]
+    );
+
+    // Check if user has liked/disliked the level
+    const likeCheck = await db.query(
+      'SELECT is_like FROM level_likes WHERE level_id = $1 AND user_id = $2',
+      [id, req.user.id]
+    );
+
+    res.json({
+      has_beaten: beatCheck.rows.length > 0,
+      has_liked: likeCheck.rows.length > 0 ? likeCheck.rows[0].is_like : null
+    });
+  } catch (err) {
+    console.error('Error checking user status:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

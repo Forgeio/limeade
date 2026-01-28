@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Choose Username - Limeade</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    .setup-container {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .setup-card {
+      background: var(--card-color);
+      border-radius: 12px;
+      padding: 48px;
+      max-width: 450px;
+      width: 100%;
+      box-shadow: var(--shadow-md);
+      text-align: center;
+    }
+    
+    .setup-card h1 {
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+    
+    .setup-card p {
+      color: var(--text-secondary);
+      margin-bottom: 32px;
+    }
+    
+    .form-group {
+      margin-bottom: 24px;
+      text-align: left;
+    }
+    
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+      box-sizing: border-box;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary-color);
+    }
+    
+    .form-input.error {
+      border-color: #ff6b6b;
+    }
+    
+    .form-hint {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+    
+    .form-error {
+      font-size: 12px;
+      color: #ff6b6b;
+      margin-top: 8px;
+      display: none;
+    }
+    
+    .btn-primary {
+      width: 100%;
+      padding: 14px 24px;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .btn-primary:hover {
+      background: #28b02e;
+    }
+    
+    .btn-primary:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    
+    .availability-status {
+      font-size: 12px;
+      margin-top: 8px;
+    }
+    
+    .availability-status.available {
+      color: var(--primary-color);
+    }
+    
+    .availability-status.taken {
+      color: #ff6b6b;
+    }
+    
+    .availability-status.checking {
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="setup-container">
+    <div class="setup-card">
+      <h1>Welcome to Limeade!</h1>
+      <p>Choose a unique username to get started</p>
+      
+      <form id="usernameForm" onsubmit="submitUsername(event)">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input 
+            type="text" 
+            class="form-input" 
+            id="usernameInput" 
+            placeholder="Enter username"
+            autocomplete="off"
+            maxlength="30"
+            required
+          >
+          <div class="form-hint">3-30 characters. Letters, numbers, underscores, and hyphens only.</div>
+          <div class="availability-status" id="availabilityStatus"></div>
+          <div class="form-error" id="formError"></div>
+        </div>
+        
+        <button type="submit" class="btn-primary" id="submitBtn" disabled>
+          Continue
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let checkTimeout = null;
+    let isAvailable = false;
+    
+    const usernameInput = document.getElementById('usernameInput');
+    const availabilityStatus = document.getElementById('availabilityStatus');
+    const formError = document.getElementById('formError');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    // Check if user needs to set username
+    async function checkUserStatus() {
+      try {
+        const response = await fetch('/auth/user');
+        if (!response.ok) {
+          window.location.href = '/login';
+          return;
+        }
+        const user = await response.json();
+        if (!user.needs_username) {
+          window.location.href = '/';
+        }
+      } catch (err) {
+        window.location.href = '/login';
+      }
+    }
+    
+    checkUserStatus();
+    
+    usernameInput.addEventListener('input', () => {
+      const username = usernameInput.value.trim();
+      
+      // Reset state
+      isAvailable = false;
+      submitBtn.disabled = true;
+      formError.style.display = 'none';
+      usernameInput.classList.remove('error');
+      
+      if (username.length < 3) {
+        availabilityStatus.textContent = '';
+        availabilityStatus.className = 'availability-status';
+        return;
+      }
+      
+      // Validate format
+      const usernameRegex = /^[a-zA-Z0-9_-]+$/;
+      if (!usernameRegex.test(username)) {
+        availabilityStatus.textContent = 'Only letters, numbers, underscores, and hyphens allowed';
+        availabilityStatus.className = 'availability-status taken';
+        return;
+      }
+      
+      // Debounce the availability check
+      clearTimeout(checkTimeout);
+      availabilityStatus.textContent = 'Checking availability...';
+      availabilityStatus.className = 'availability-status checking';
+      
+      checkTimeout = setTimeout(() => checkAvailability(username), 300);
+    });
+    
+    async function checkAvailability(username) {
+      try {
+        const response = await fetch(`/auth/check-username?username=${encodeURIComponent(username)}`);
+        const data = await response.json();
+        
+        if (data.available) {
+          availabilityStatus.textContent = '✓ Username is available';
+          availabilityStatus.className = 'availability-status available';
+          isAvailable = true;
+          submitBtn.disabled = false;
+        } else {
+          availabilityStatus.textContent = '✗ Username is already taken';
+          availabilityStatus.className = 'availability-status taken';
+          isAvailable = false;
+          submitBtn.disabled = true;
+        }
+      } catch (err) {
+        availabilityStatus.textContent = 'Error checking availability';
+        availabilityStatus.className = 'availability-status taken';
+      }
+    }
+    
+    async function submitUsername(e) {
+      e.preventDefault();
+      
+      const username = usernameInput.value.trim();
+      
+      if (!isAvailable || username.length < 3) {
+        return;
+      }
+      
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Setting up...';
+      
+      try {
+        const response = await fetch('/auth/set-username', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          window.location.href = '/';
+        } else {
+          formError.textContent = data.error || 'Failed to set username';
+          formError.style.display = 'block';
+          usernameInput.classList.add('error');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Continue';
+        }
+      } catch (err) {
+        formError.textContent = 'Network error. Please try again.';
+        formError.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Continue';
+      }
+    }
+  </script>
+</body>
+</html>
