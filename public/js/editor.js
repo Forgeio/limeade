@@ -17,6 +17,12 @@ const editor = {
   gridWidth: 50,
   gridHeight: 20,
   tileSize: 16,
+  zoom: 1.0,
+  targetZoom: 1.0,
+  zoomAnchorX: 0,
+  zoomAnchorY: 0,
+  minZoom: 1.0,
+  maxZoom: 5.0,
   cameraX: 0,
   cameraY: 0,
   velX: 0,
@@ -49,15 +55,119 @@ const editor = {
   isNewDraft: false,
   dragButton: null,
   mouseX: 0,
-  mouseY: 0
+  mouseY: 0,
+  assets: {
+    tilesheet: null,
+    tilesheet2: null,
+    spike: null,
+    coin: null,
+    token: null,
+    enemyWalk: null,
+    playerIdle: null,
+    goal: null
+  },
+  assetsLoaded: false
 };
 
 let deleteConfirmResolver = null;
 
+function loadEditorAssets() {
+  return Promise.all([
+    loadEditorImage('graphics/tilesheet_1.png').then(img => editor.assets.tilesheet = img),
+    loadEditorImage('graphics/tilesheet_2.png').then(img => editor.assets.tilesheet2 = img),
+    loadEditorImage('graphics/spike.png').then(img => editor.assets.spike = img),
+    loadEditorImage('graphics/coin.png').then(img => editor.assets.coin = img),
+    loadEditorImage('graphics/token.png').then(img => editor.assets.token = img),
+    loadEditorImage('graphics/enemy1_walk.png').then(img => editor.assets.enemyWalk = img),
+    loadEditorImage('graphics/player_idle.png').then(img => editor.assets.playerIdle = img),
+    loadEditorImage('graphics/goal.png').then(img => editor.assets.goal = img)
+  ]).then(() => {
+    editor.assetsLoaded = true;
+  });
+}
+
+function loadEditorImage(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = src;
+    img.onload = () => resolve(img);
+    img.onerror = () => {
+      console.warn(`Failed to load ${src}`);
+      resolve(null);
+    };
+  });
+}
+
+// Render tile previews in toolbar using canvas
+function renderToolbarPreviews() {
+  // Render ground preview (tilesheet_2)
+  const groundCanvas = document.getElementById('preview-ground');
+  if (groundCanvas && editor.assets.tilesheet2) {
+    renderTilePreview(groundCanvas, editor.assets.tilesheet2);
+  }
+  
+  // Render tile preview (tilesheet_1)
+  const tileCanvas = document.getElementById('preview-tile');
+  if (tileCanvas && editor.assets.tilesheet) {
+    renderTilePreview(tileCanvas, editor.assets.tilesheet);
+  }
+}
+
+// Render a single tile preview - a standalone block (no neighbors)
+function renderTilePreview(canvas, tilesheet) {
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  
+  // Clear canvas
+  ctx.clearRect(0, 0, 32, 32);
+  
+  // For a standalone block with no neighbors, calculate the masks:
+  // TL vertex: only BR corner (our tile) is solid → mask = 8
+  // TR vertex: only BL corner (our tile) is solid → mask = 4
+  // BL vertex: only TR corner (our tile) is solid → mask = 2
+  // BR vertex: only TL corner (our tile) is solid → mask = 1
+  
+  const maskTL = 8;
+  const maskTR = 4;
+  const maskBL = 2;
+  const maskBR = 1;
+  
+  // Draw 4 quadrants at 16x16 each (scaled from 8x8)
+  drawPreviewQuadrant(ctx, tilesheet, maskTL, 3, 0, 0, 16, 16);
+  drawPreviewQuadrant(ctx, tilesheet, maskTR, 2, 16, 0, 16, 16);
+  drawPreviewQuadrant(ctx, tilesheet, maskBL, 1, 0, 16, 16, 16);
+  drawPreviewQuadrant(ctx, tilesheet, maskBR, 0, 16, 16, 16, 16);
+}
+
+// Draw a single quadrant from the autotile sheet for preview
+function drawPreviewQuadrant(ctx, tilesheet, mask, quadrant, destX, destY, destWidth, destHeight) {
+  if (mask === 0) return;
+
+  // Same mapping as drawEditorAutoTileQuadrant
+  const mapping = [
+    { c: 0, r: 3 }, { c: 3, r: 3 }, { c: 0, r: 2 }, { c: 1, r: 2 },
+    { c: 0, r: 0 }, { c: 3, r: 2 }, { c: 2, r: 3 }, { c: 3, r: 1 },
+    { c: 1, r: 3 }, { c: 0, r: 1 }, { c: 1, r: 0 }, { c: 2, r: 2 },
+    { c: 3, r: 0 }, { c: 2, r: 0 }, { c: 1, r: 1 }, { c: 2, r: 1 }
+  ];
+
+  const pos = mapping[mask] || mapping[0];
+  const tileX = pos.c * 16;
+  const tileY = pos.r * 16;
+
+  // quadrant: 0=BR, 1=BL, 2=TR, 3=TL (which 8x8 portion of the 16x16 source)
+  const qx = (quadrant % 2) * 8;
+  const qy = Math.floor(quadrant / 2) * 8;
+
+  ctx.drawImage(tilesheet, tileX + qx, tileY + qy, 8, 8, destX, destY, destWidth, destHeight);
+}
 // Initialize the editor
 function initEditor() {
   editor.canvas = document.getElementById('editorCanvas');
   editor.ctx = editor.canvas.getContext('2d');
+  
+  // Disable image smoothing for pixel art
+  editor.ctx.imageSmoothingEnabled = false;
   
   // Set canvas size
   resizeCanvas();
@@ -105,8 +215,11 @@ function initEditor() {
     }
   });
 
-  // Load user's drafts first
-  loadUserDrafts().then(() => {
+  // Load assets and user's drafts
+  loadEditorAssets().then(() => {
+    renderToolbarPreviews();
+    return loadUserDrafts();
+  }).then(() => {
     // Create a new draft or load existing one
     const urlParams = new URLSearchParams(window.location.search);
     const levelId = urlParams.get('id');
@@ -175,7 +288,30 @@ function resizeCanvas() {
   const container = document.querySelector('.editor-container');
   editor.canvas.width = container.clientWidth;
   editor.canvas.height = container.clientHeight;
+  
+  // Disable smoothing for pixel art
+  if (editor.ctx) editor.ctx.imageSmoothingEnabled = false;
+
   render();
+}
+
+function updateDefaultZoom() {
+  if (!editor.canvas) return;
+  
+  // Use getMinZoom if available, otherwise calculate
+  const dynamicMinZoom = (typeof getMinZoom === 'function') ? getMinZoom() : 1.0;
+  
+  // Default to 1.0 (1:1 pixel) but don't go below dynamic min
+  let defaultZoom = Math.max(1.0, dynamicMinZoom);
+  
+  // Cap at a reasonable max
+  defaultZoom = Math.min(defaultZoom, 4.0);
+  
+  editor.zoom = defaultZoom;
+  editor.targetZoom = defaultZoom;
+  
+  // Center camera after setting zoom
+  clampCamera();
 }
 
 // Setup tile selector buttons
@@ -233,15 +369,10 @@ function handleWindowMouseMove(e) {
        const deltaX = currentMouseX - editor.panStartX;
        const deltaY = currentMouseY - editor.panStartY;
        
-       let newX = editor.panCameraStartX - deltaX;
-       let newY = editor.panCameraStartY - deltaY;
+       editor.cameraX = editor.panCameraStartX - deltaX;
+       editor.cameraY = editor.panCameraStartY - deltaY;
        
-       // Clamp values
-       const maxX = Math.max(0, editor.gridWidth * editor.tileSize - editor.canvas.width);
-       const maxY = Math.max(0, editor.gridHeight * editor.tileSize - editor.canvas.height);
-       
-       editor.cameraX = Math.max(0, Math.min(maxX, newX));
-       editor.cameraY = Math.max(0, Math.min(maxY, newY));
+       clampCamera();
    }
 }
 
@@ -263,14 +394,11 @@ function handleWindowMouseUp(e) {
 // Handle mouse move (for canvas)
 function handleMouseMove(e) {
   updateMousePosition(e);
-  
-  // Only update position display here, panning is handled by window listener if active
-  // But if we are panning strictly inside canvas, the window listener handles it too.
-  // We keep this for position display and just in case.
+  const scaledTileSize = editor.tileSize * editor.zoom;
   
   // Update position display
-  const gridX = Math.floor((editor.mouseX + editor.cameraX) / editor.tileSize);
-  const gridY = Math.floor((editor.mouseY + editor.cameraY) / editor.tileSize);
+  const gridX = Math.floor((editor.mouseX + editor.cameraX) / scaledTileSize);
+  const gridY = Math.floor((editor.mouseY + editor.cameraY) / scaledTileSize);
   
   document.getElementById('positionText').textContent = `Position: ${gridX}, ${gridY}`;
 }
@@ -291,8 +419,9 @@ function updateMousePosition(e) {
 
 // Place or remove tile
 function placeTile() {
-  const gridX = Math.floor((editor.mouseX + editor.cameraX) / editor.tileSize);
-  const gridY = Math.floor((editor.mouseY + editor.cameraY) / editor.tileSize);
+  const scaledTileSize = editor.tileSize * editor.zoom;
+  const gridX = Math.floor((editor.mouseX + editor.cameraX) / scaledTileSize);
+  const gridY = Math.floor((editor.mouseY + editor.cameraY) / scaledTileSize);
   
   // Check if within bounds
   if (gridX < 0 || gridX >= editor.gridWidth || gridY < 0 || gridY >= editor.gridHeight) {
@@ -419,16 +548,13 @@ function updateCamera() {
   editor.cameraY += editor.velY;
 
   // Clamp camera position to level bounds
-  const maxX = Math.max(0, editor.gridWidth * editor.tileSize - editor.canvas.width);
-  const maxY = Math.max(0, editor.gridHeight * editor.tileSize - editor.canvas.height);
-
-  editor.cameraX = Math.max(0, Math.min(maxX, editor.cameraX));
-  editor.cameraY = Math.max(0, Math.min(maxY, editor.cameraY));
+  clampCamera();
 }
 
 // Game loop
 function gameLoop() {
   updateCamera();
+  updateZoom();
   if (editor.isDragging) {
     placeTile();
   }
@@ -436,10 +562,42 @@ function gameLoop() {
   requestAnimationFrame(gameLoop);
 }
 
+// Smoothly animate zoom towards target
+function updateZoom() {
+  const diff = editor.targetZoom - editor.zoom;
+  
+  // If close enough, snap to target
+  if (Math.abs(diff) < 0.001) {
+    editor.zoom = editor.targetZoom;
+    return;
+  }
+  
+  // Lerp towards target (0.15 = smooth but responsive)
+  const oldZoom = editor.zoom;
+  editor.zoom += diff * 0.15;
+  
+  // Adjust camera to keep zoom anchor point fixed on screen
+  const mouseWorldX = (editor.zoomAnchorX + editor.cameraX) / oldZoom;
+  const mouseWorldY = (editor.zoomAnchorY + editor.cameraY) / oldZoom;
+  
+  editor.cameraX = mouseWorldX * editor.zoom - editor.zoomAnchorX;
+  editor.cameraY = mouseWorldY * editor.zoom - editor.zoomAnchorY;
+  
+  clampCamera();
+}
+
 // Render the level
 function render() {
   const ctx = editor.ctx;
   const canvas = editor.canvas;
+  
+  // Use float tile size for smooth zooming
+  const scaledTileSize = editor.tileSize * editor.zoom;
+  const camX = editor.cameraX;
+  const camY = editor.cameraY;
+  
+  // Ensure pixel-perfect rendering
+  ctx.imageSmoothingEnabled = false;
   
   // Clear canvas
   ctx.fillStyle = '#87ceeb';
@@ -449,66 +607,268 @@ function render() {
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
   ctx.lineWidth = 1;
   
-  const startX = Math.floor(editor.cameraX / editor.tileSize);
-  const startY = Math.floor(editor.cameraY / editor.tileSize);
-  const endX = Math.min(editor.gridWidth, startX + Math.ceil(canvas.width / editor.tileSize) + 1);
-  const endY = Math.min(editor.gridHeight, startY + Math.ceil(canvas.height / editor.tileSize) + 1);
+  const startX = Math.floor(camX / scaledTileSize);
+  const startY = Math.floor(camY / scaledTileSize);
+  const endX = Math.min(editor.gridWidth, startX + Math.ceil(canvas.width / scaledTileSize) + 1);
+  const endY = Math.min(editor.gridHeight, startY + Math.ceil(canvas.height / scaledTileSize) + 1);
   
   // Draw vertical grid lines
   for (let x = startX; x <= endX; x++) {
-    const screenX = x * editor.tileSize - editor.cameraX;
+    const screenX = Math.floor(x * scaledTileSize - camX);
     ctx.beginPath();
-    ctx.moveTo(screenX, 0);
-    ctx.lineTo(screenX, canvas.height);
+    ctx.moveTo(screenX + 0.5, 0);
+    ctx.lineTo(screenX + 0.5, canvas.height);
     ctx.stroke();
   }
   
   // Draw horizontal grid lines
   for (let y = startY; y <= endY; y++) {
-    const screenY = y * editor.tileSize - editor.cameraY;
+    const screenY = Math.floor(y * scaledTileSize - camY);
     ctx.beginPath();
-    ctx.moveTo(0, screenY);
-    ctx.lineTo(canvas.width, screenY);
+    ctx.moveTo(0, screenY + 0.5);
+    ctx.lineTo(canvas.width, screenY + 0.5);
     ctx.stroke();
   }
   
-  // Draw tiles
-  Object.keys(editor.levelData).forEach(key => {
-    const [x, y] = key.split(',').map(Number);
-    const tileType = editor.levelData[key];
-    const screenX = x * editor.tileSize - editor.cameraX;
-    const screenY = y * editor.tileSize - editor.cameraY;
-    
-    // Only draw if visible
-    if (screenX + editor.tileSize >= 0 && screenX < canvas.width &&
-        screenY + editor.tileSize >= 0 && screenY < canvas.height) {
-      drawTile(ctx, tileType, screenX, screenY, editor.tileSize);
+  // First pass: Draw non-ground tiles (spikes, coins, enemies, etc.)
+  for (let y = startY; y < endY; y++) {
+    for (let x = startX; x < endX; x++) {
+      const key = `${x},${y}`;
+      const type = editor.levelData[key];
+      if (!type) continue;
+      if (type === 'ground' || type === 'tile') continue; // Skip for second pass
+      
+      const screenX = Math.floor(x * scaledTileSize - camX);
+      const screenY = Math.floor(y * scaledTileSize - camY);
+      
+      renderEditorTile(ctx, type, screenX, screenY, scaledTileSize);
     }
-  });
+  }
+  
+  // Second pass: Draw ground tiles with autotiling
+  const tilesheet1 = editor.assets.tilesheet;
+  const tilesheet2 = editor.assets.tilesheet2;
+  
+  for (const key of Object.keys(editor.levelData)) {
+    const type = editor.levelData[key];
+    if (type !== 'ground' && type !== 'tile') continue;
+    
+    // Use tilesheet2 for ground, tilesheet1 for tile
+    const tilesheet = type === 'ground' ? tilesheet2 : tilesheet1;
+    const useTilesheet = tilesheet && tilesheet.width > 0;
+    
+    const [x, y] = key.split(',').map(Number);
+    const screenX = Math.floor(x * scaledTileSize - camX);
+    const screenY = Math.floor(y * scaledTileSize - camY);
+    
+    // Skip if off-screen
+    if (screenX + scaledTileSize < 0 || screenX > canvas.width ||
+        screenY + scaledTileSize < 0 || screenY > canvas.height) continue;
+    
+    if (useTilesheet) {
+      // Calculate masks for each corner (vertices) - only match same tile type
+      const maskTL = getEditorVertexMask(x, y, type);
+      const maskTR = getEditorVertexMask(x + 1, y, type);
+      const maskBL = getEditorVertexMask(x, y + 1, type);
+      const maskBR = getEditorVertexMask(x + 1, y + 1, type);
+      
+      // Draw 4 sub-tiles scaled by zoom (use Math.floor for first half to avoid gaps)
+      const halfSize = Math.floor(scaledTileSize / 2);
+      const halfSize2 = scaledTileSize - halfSize; // Remainder for second half
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX, screenY, halfSize, halfSize);
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + halfSize, screenY, halfSize2, halfSize);
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX, screenY + halfSize, halfSize, halfSize2);
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + halfSize, screenY + halfSize, halfSize2, halfSize2);
+    } else {
+      // Fallback: simple brown rectangle
+      ctx.fillStyle = '#8b4513';
+      ctx.fillRect(screenX, screenY, scaledTileSize, scaledTileSize);
+    }
+  }
 
   // Draw ghost tile
   if (!editor.isPanning) {
-    const gridX = Math.floor((editor.mouseX + editor.cameraX) / editor.tileSize);
-    const gridY = Math.floor((editor.mouseY + editor.cameraY) / editor.tileSize);
+    const gridX = Math.floor((editor.mouseX + camX) / scaledTileSize);
+    const gridY = Math.floor((editor.mouseY + camY) / scaledTileSize);
     
     // Check if within bounds
     if (gridX >= 0 && gridX < editor.gridWidth && gridY >= 0 && gridY < editor.gridHeight) {
-      const screenX = gridX * editor.tileSize - editor.cameraX;
-      const screenY = gridY * editor.tileSize - editor.cameraY;
+      const screenX = Math.floor(gridX * scaledTileSize - camX);
+      const screenY = Math.floor(gridY * scaledTileSize - camY);
       
       // Only draw ghost if there isn't already a tile of the same type there
       const key = `${gridX},${gridY}`;
       if (editor.levelData[key] !== editor.selectedTile) {
         ctx.globalAlpha = 0.5;
-        drawTile(ctx, editor.selectedTile, screenX, screenY, editor.tileSize);
+        
+        // For ground/tile types, render with autotiling preview
+        if ((editor.selectedTile === 'ground' || editor.selectedTile === 'tile')) {
+          renderGhostAutotile(ctx, editor.selectedTile, gridX, gridY, screenX, screenY, scaledTileSize);
+        } else {
+          renderEditorTile(ctx, editor.selectedTile, screenX, screenY, scaledTileSize);
+        }
+        
         ctx.globalAlpha = 1.0;
       }
     }
   }
   
-  // Update level size display
+  // Update level size display - and now zoom
   document.getElementById('levelSizeText').textContent = 
-    `Level Size: ${editor.gridWidth}x${editor.gridHeight}`;
+    `Level Size: ${editor.gridWidth}x${editor.gridHeight} | Zoom: ${Math.round(editor.zoom * 100)}%`;
+}
+
+// Render a single tile with sprite if available
+function renderEditorTile(ctx, type, screenX, screenY, size) {
+  switch (type) {
+    case 'spike':
+      if (editor.assets.spike) {
+        ctx.drawImage(editor.assets.spike, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+      
+    case 'coin':
+      if (editor.assets.coin) {
+        ctx.drawImage(editor.assets.coin, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+      
+    case 'diamond':
+      if (editor.assets.token) {
+        ctx.drawImage(editor.assets.token, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+      
+    case 'enemy':
+      if (editor.assets.enemyWalk) {
+        ctx.drawImage(editor.assets.enemyWalk, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+      
+    case 'spawn':
+      if (editor.assets.playerIdle) {
+        ctx.drawImage(editor.assets.playerIdle, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+      
+    case 'goal':
+      if (editor.assets.goal) {
+        // Draw full goal image with origin at bottom-left 16x16 tile
+        const goalWidth = editor.assets.goal.width;
+        const goalHeight = editor.assets.goal.height;
+        const scale = size / 16; // Scale based on tile size
+        const drawWidth = goalWidth * scale;
+        const drawHeight = goalHeight * scale;
+        // Position so bottom-left aligns with the tile
+        const drawX = screenX;
+        const drawY = screenY + size - drawHeight;
+        ctx.drawImage(editor.assets.goal, 0, 0, goalWidth, goalHeight, drawX, drawY, drawWidth, drawHeight);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+      
+    case 'ground':
+    case 'tile':
+      // Draw "fully surrounded" tile for ghost preview (mask 15 = all corners filled)
+      const ghostTilesheet = type === 'ground' ? editor.assets.tilesheet2 : editor.assets.tilesheet;
+      if (ghostTilesheet && ghostTilesheet.width > 0) {
+        // Mask 15 is the "all filled" variant - at column 2, row 1 (pixel 32, 16)
+        ctx.drawImage(ghostTilesheet, 32, 16, 16, 16, screenX, screenY, size, size);
+      } else {
+        ctx.fillStyle = '#8b4513';
+        ctx.fillRect(screenX, screenY, size, size);
+      }
+      break;
+      
+    default:
+      // Fallback to shapes
+      drawTile(ctx, type, screenX, screenY, size);
+      break;
+  }
+}
+
+// Get vertex mask for autotiling in editor
+function getEditorVertexMask(vx, vy, tileType) {
+  let mask = 0;
+  if (isEditorTileSolid(vx - 1, vy - 1, tileType)) mask |= 1; // TL
+  if (isEditorTileSolid(vx, vy - 1, tileType))     mask |= 2; // TR
+  if (isEditorTileSolid(vx - 1, vy, tileType))     mask |= 4; // BL
+  if (isEditorTileSolid(vx, vy, tileType))         mask |= 8; // BR
+  return mask;
+}
+
+function isEditorTileSolid(x, y, tileType) {
+  // Treat out of bounds as solid on left, right, and bottom (but not top)
+  if (x < 0 || x >= editor.gridWidth || y >= editor.gridHeight) return true;
+  if (y < 0) return false; // Top is open
+  
+  const key = `${x},${y}`;
+  const t = editor.levelData[key];
+  // Only match the same tile type for autotiling
+  return t === tileType;
+}
+
+// Draw a single quadrant from the autotile sheet (scaled)
+function drawEditorAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY, destWidth, destHeight) {
+  if (mask === 0) return;
+
+  // Mapping bitmask value to tilesheet coordinates (col, row)
+  const mapping = [
+    { c: 0, r: 3 }, { c: 3, r: 3 }, { c: 0, r: 2 }, { c: 1, r: 2 },
+    { c: 0, r: 0 }, { c: 3, r: 2 }, { c: 2, r: 3 }, { c: 3, r: 1 },
+    { c: 1, r: 3 }, { c: 0, r: 1 }, { c: 1, r: 0 }, { c: 2, r: 2 },
+    { c: 3, r: 0 }, { c: 2, r: 0 }, { c: 1, r: 1 }, { c: 2, r: 1 }
+  ];
+
+  const pos = mapping[mask] || mapping[0];
+  const tileX = pos.c * 16;
+  const tileY = pos.r * 16;
+
+  // quadrant: 0=BR, 1=BL, 2=TR, 3=TL (which 8x8 portion of the 16x16 source)
+  const qx = (quadrant % 2) * 8;
+  const qy = Math.floor(quadrant / 2) * 8;
+
+  ctx.drawImage(tilesheet, tileX + qx, tileY + qy, 8, 8, destX, destY, destWidth, destHeight);
+}
+
+// Render ghost tile with autotiling (shows standalone outlined block)
+function renderGhostAutotile(ctx, type, gridX, gridY, screenX, screenY, size) {
+  const tilesheet = type === 'ground' ? editor.assets.tilesheet2 : editor.assets.tilesheet;
+  
+  if (!tilesheet || tilesheet.width === 0) {
+    ctx.fillStyle = '#8b4513';
+    ctx.fillRect(screenX, screenY, size, size);
+    return;
+  }
+  
+  // Use fixed masks for standalone block (same as toolbar preview)
+  // TL vertex: only BR corner solid → mask = 8
+  // TR vertex: only BL corner solid → mask = 4
+  // BL vertex: only TR corner solid → mask = 2
+  // BR vertex: only TL corner solid → mask = 1
+  const maskTL = 8;
+  const maskTR = 4;
+  const maskBL = 2;
+  const maskBR = 1;
+  
+  // Draw 4 sub-tiles scaled by zoom
+  const halfSize = Math.floor(size / 2);
+  const halfSize2 = size - halfSize;
+  drawEditorAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX, screenY, halfSize, halfSize);
+  drawEditorAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + halfSize, screenY, halfSize2, halfSize);
+  drawEditorAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX, screenY + halfSize, halfSize, halfSize2);
+  drawEditorAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + halfSize, screenY + halfSize, halfSize2, halfSize2);
 }
 
 // Create a new draft
@@ -526,6 +886,13 @@ async function createNewDraft() {
 
   // Update level name input
   const levelNameInput = document.getElementById('levelName');
+  if (levelNameInput) {
+    levelNameInput.value = editor.levelTitle;
+  }
+  
+  updateDefaultZoom();
+  updateStatus('New draft (unsaved)');
+  updatelevelNameInput = document.getElementById('levelName');
   if (levelNameInput) {
     levelNameInput.value = editor.levelTitle;
   }
@@ -792,6 +1159,7 @@ async function loadLevel(levelId) {
         });
       }
       
+      updateDefaultZoom();
       updateStatus('Level loaded');
       render();
       
@@ -1037,20 +1405,75 @@ async function deleteDraft() {
   await deleteLevelItem({ stopPropagation: () => {} }, editor.levelId, 'drafts');
 }
 
-// Handle mouse wheel (touchpad scrolling)
+// Handle mouse wheel (touchpad scrolling) -> NOW ZOOM
 function handleWheel(e) {
   e.preventDefault();
   
-  // Update camera based on scroll delta
-  editor.cameraX += e.deltaX;
-  editor.cameraY += e.deltaY;
+  // Get current power of 2 exponent
+  const currentExp = Math.log2(editor.targetZoom);
+  let newExp;
   
-  // Clamp values
-  const maxX = Math.max(0, editor.gridWidth * editor.tileSize - editor.canvas.width);
-  const maxY = Math.max(0, editor.gridHeight * editor.tileSize - editor.canvas.height);
+  if (e.deltaY < 0) {
+    // Scroll up = zoom in (next power of 2)
+    newExp = Math.ceil(currentExp + 0.01); // +0.01 to handle floating point at exact powers
+  } else {
+    // Scroll down = zoom out (previous power of 2)
+    newExp = Math.floor(currentExp - 0.01);
+  }
   
-  editor.cameraX = Math.max(0, Math.min(maxX, editor.cameraX));
-  editor.cameraY = Math.max(0, Math.min(maxY, editor.cameraY));
+  // Convert back to zoom level (power of 2)
+  let newZoom = Math.pow(2, newExp);
+
+  // Calculate dynamic minimum zoom so level fills canvas in BOTH dimensions
+  const dynamicMinZoom = getMinZoom();
+
+  // Clamp zoom
+  newZoom = Math.max(dynamicMinZoom, Math.min(editor.maxZoom, newZoom));
+  
+  // Only update if actually changed
+  if (Math.abs(newZoom - editor.targetZoom) > 0.0001) {
+    editor.targetZoom = newZoom;
+    editor.zoomAnchorX = editor.mouseX;
+    editor.zoomAnchorY = editor.mouseY;
+  }
+}
+
+function getMinZoom() {
+  // Calculate minimum zoom so level always fills the canvas
+  const levelPxWidth = editor.gridWidth * editor.tileSize;
+  const levelPxHeight = editor.gridHeight * editor.tileSize;
+  const minZoomX = editor.canvas.width / levelPxWidth;
+  const minZoomY = editor.canvas.height / levelPxHeight;
+  // Use MAX so that BOTH dimensions fit (level fills canvas on at least one axis)
+  const dynamicMin = Math.max(minZoomX, minZoomY);
+  
+  // Find the closest power of 2 without going under (ceil ensures we don't zoom out too far)
+  const exponent = Math.ceil(Math.log2(dynamicMin));
+  const powerOf2Min = Math.pow(2, exponent);
+  
+  // Don't go below 1.0 (100%)
+  return Math.max(1.0, powerOf2Min);
+}
+
+function clampCamera() {
+  const scaledLevelWidth = editor.gridWidth * editor.tileSize * editor.zoom;
+  const scaledLevelHeight = editor.gridHeight * editor.tileSize * editor.zoom;
+  
+  // If level is smaller than canvas, center it
+  if (scaledLevelWidth <= editor.canvas.width) {
+    editor.cameraX = -(editor.canvas.width - scaledLevelWidth) / 2;
+  } else {
+    const maxX = scaledLevelWidth - editor.canvas.width;
+    editor.cameraX = Math.max(0, Math.min(maxX, editor.cameraX));
+  }
+  
+  if (scaledLevelHeight <= editor.canvas.height) {
+    editor.cameraY = -(editor.canvas.height - scaledLevelHeight) / 2;
+  } else {
+    const maxY = scaledLevelHeight - editor.canvas.height;
+    editor.cameraY = Math.max(0, Math.min(maxY, editor.cameraY));
+  }
+  // Keep camera as floats for smooth animation - rounding happens at render time
 }
 
 // Initialize when page loads

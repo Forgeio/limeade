@@ -1,15 +1,15 @@
 const TILE_SIZE = 16;
 
-// Physics constants (Scaled for 16px tiles)
-const GRAVITY = 0.3;
-const MAX_FALL_SPEED = 8;
+// Physics constants
+const GRAVITY = 0.25;
+const MAX_FALL_SPEED = 7;
 
 // Movement constants
-const PLAYER_SPEED = 4; // ~Half of 7.5
+const PLAYER_SPEED = 4; 
 const GROUND_ACCELERATION = 0.3;
 const AIR_ACCELERATION = 0.2;
-const GROUND_FRICTION = 0.82;
-const AIR_FRICTION = 0.94;
+const GROUND_FRICTION = 0.8;
+const AIR_FRICTION = 0.9;
 const TURN_MULTIPLIER = 1.8;
 
 // Jump constants
@@ -23,7 +23,7 @@ const JUMP_BUFFER = 6;
 // Combat constants
 const ATTACK_DURATION = 6;
 const ATTACK_COOLDOWN = 16;
-const ATTACK_RANGE = 16; // Adjusted range
+const ATTACK_RANGE = 16;
 
 // Wall jump constants
 const WALL_SLIDE_SPEED = 1.5;
@@ -53,8 +53,8 @@ const game = {
   player: {
     x: 32,
     y: 32,
-    width: 16,
-    height: 16,
+    width: 14,
+    height: 14,
     velX: 0,
     velY: 0,
     onGround: false,
@@ -120,8 +120,12 @@ const game = {
     playerIdle: null,
     playerPunch: null,
     spike: null,
+    coin: null,
+    token: null,
     enemyWalk: null,
     tilesheet: null,
+    tilesheet2: null,
+    timerFont: null,
   }
 };
 
@@ -134,9 +138,16 @@ function loadAssets() {
     loadImage('graphics/player_idle.png').then(img => game.assets.playerIdle = img),
     loadImage('graphics/player_hand_punch.png').then(img => game.assets.playerPunch = img),
     loadImage('graphics/spike.png').then(img => game.assets.spike = img),
+    loadImage('graphics/coin.png').then(img => game.assets.coin = img),
+    loadImage('graphics/token.png').then(img => game.assets.token = img),
     loadImage('graphics/enemy1_walk.png').then(img => game.assets.enemyWalk = img),
+    loadImage('graphics/goal.png').then(img => game.assets.goal = img),
+    loadImage('graphics/timer_font.png').then(img => game.assets.timerFont = img),
     loadImage('graphics/tilesheet_1.png').then(img => {
       game.assets.tilesheet = img;
+    }),
+    loadImage('graphics/tilesheet_2.png').then(img => {
+      game.assets.tilesheet2 = img;
     }),
   ]);
 }
@@ -310,6 +321,12 @@ function resetLevelState() {
   game.animTime = 0;
 
   game.enemies = [];
+  game.collectedCoins = new Set(); // Track collected coins for animation
+  game.coinAnims = []; // Active coin animations
+
+  game.collectedTokens = new Set();
+  game.tokenAnims = [];
+
   game.spawn = { x: TILE_SIZE, y: TILE_SIZE };
 
   Object.entries(game.tiles).forEach(([key, type]) => {
@@ -325,11 +342,11 @@ function resetLevelState() {
       game.enemies.push({
         x: px,
         y: py,
-        width: TILE_SIZE,
-        height: TILE_SIZE,
+        width: 14,
+        height: 14,
         velX: 1.2,
         velY: 0,
-        direction: 1,
+        direction: -1,
         onGround: false,
         active: false,
         dead: false
@@ -429,10 +446,71 @@ function update() {
   
   updatePlayer();
   updateEnemies();
+  updateCoins();
   handleAttack();
   checkPlayerHazards();
   checkGoalCollision();
   updateCamera();
+}
+
+function updateCoins() {
+  const p = game.player;
+  const cx = p.x + p.width/2;
+  const cy = p.y + p.height/2;
+  const radius = 16; // Pickup radius
+
+  // Check for coin collection
+  Object.entries(game.tiles).forEach(([key, type]) => {
+     if (type === 'coin' && !game.collectedCoins.has(key)) {
+         const [tx, ty] = key.split(',').map(Number);
+         const tileX = tx * TILE_SIZE + TILE_SIZE/2;
+         const tileY = ty * TILE_SIZE + TILE_SIZE/2;
+         
+         const dist = Math.abs(tileX - cx) + Math.abs(tileY - cy);
+         if (dist < radius) {
+             game.collectedCoins.add(key);
+             // Start collection animation
+             game.coinAnims.push({
+                 x: tx * TILE_SIZE,
+                 y: ty * TILE_SIZE,
+                 timer: 0
+             });
+         }
+     } else if (type === 'diamond' && !game.collectedTokens.has(key)) { // Using existing 'diamond' type from map for tokens
+         const [tx, ty] = key.split(',').map(Number);
+         const tileX = tx * TILE_SIZE + TILE_SIZE/2;
+         const tileY = ty * TILE_SIZE + TILE_SIZE/2;
+         
+         const dist = Math.abs(tileX - cx) + Math.abs(tileY - cy);
+         if (dist < radius) {
+             game.collectedTokens.add(key);
+             // Start token animation
+             game.tokenAnims.push({
+                 x: tx * TILE_SIZE,
+                 y: ty * TILE_SIZE,
+                 timer: 0
+             });
+         }
+     }
+  });
+
+  // Update animations
+  for (let i = game.coinAnims.length - 1; i >= 0; i--) {
+      game.coinAnims[i].timer++;
+      // 3 frames of animation, maybe 5 ticks per frame = 15 ticks total
+      if (game.coinAnims[i].timer > 15) {
+          game.coinAnims.splice(i, 1);
+      }
+  }
+
+  // Update token animations
+  for (let i = game.tokenAnims.length - 1; i >= 0; i--) {
+      game.tokenAnims[i].timer++;
+      // Extended duration: 7 frames (28 ticks) + linger + fade (total 60)
+      if (game.tokenAnims[i].timer > 60) {
+          game.tokenAnims.splice(i, 1);
+      }
+  }
 }
 
 function updatePlayer() {
@@ -517,13 +595,15 @@ function isPlayerTurning(inputDir, velX) {
 function canPerformLeftWallJump(player) {
   const touchingOrCoyote = player.touchingWallLeft || 
     (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === -1);
-  return touchingOrCoyote && player.wallJumpCooldown === 0;
+  // Must be pressing into the wall (left key)
+  return touchingOrCoyote && player.wallJumpCooldown === 0 && game.keys.left;
 }
 
 function canPerformRightWallJump(player) {
   const touchingOrCoyote = player.touchingWallRight || 
     (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === 1);
-  return touchingOrCoyote && player.wallJumpCooldown === 0;
+  // Must be pressing into the wall (right key)
+  return touchingOrCoyote && player.wallJumpCooldown === 0 && game.keys.right;
 }
 
 function isPlayerSlidingOnWall(player) {
@@ -645,6 +725,24 @@ function handleAttack() {
   if (player.attackTimer <= 0) return;
 
   const hurtbox = getHurtbox(player);
+  
+  // 0. Check Collectibles (Coins/Tokens) - pass through interaction
+  const collectibles = getCollidingTiles(hurtbox, true).filter(t => t.type === 'coin' || t.type === 'diamond');
+  collectibles.forEach(tile => {
+    // Reconstruct key from tile coordinates (which come from x*TILE_SIZE)
+    const tx = Math.round(tile.x / TILE_SIZE);
+    const ty = Math.round(tile.y / TILE_SIZE);
+    const key = `${tx},${ty}`;
+
+    if (tile.type === 'coin' && !game.collectedCoins.has(key)) {
+       game.collectedCoins.add(key);
+       game.coinAnims.push({ x: tile.x, y: tile.y, timer: 0 });
+    } else if (tile.type === 'diamond' && !game.collectedTokens.has(key)) {
+       game.collectedTokens.add(key);
+       game.tokenAnims.push({ x: tile.x, y: tile.y, timer: 0 });
+    }
+  });
+
   // Consider the first two frames as "impact frames" for pogo purposes
   // logic executes frame 0 (timer=DURATION) and frame 1 (timer=DURATION-1)
   // ATTACK_DURATION usually 6. 
@@ -703,7 +801,7 @@ function handleAttack() {
   // 4. Spike Pogo Logic (only if we didn't hit a wall/enemy blocking the way)
   if (player.attackDir.y > 0 && isImpactFrame) {
     const nearbyHazards = getCollidingTiles(hurtbox, true);
-    const hitSpike = nearbyHazards.some(tile => tile.type === 'spike' && rectsIntersect(hurtbox, tile));
+    const hitSpike = nearbyHazards.some(tile => tile.type === 'spike' && spikeIntersect(hurtbox, tile));
 
     if (hitSpike) {
       player.velY = BOUNCE_VELOCITY;
@@ -833,8 +931,7 @@ function movePlayerY(dy) {
   const player = game.player;
   player.y += dy;
   
-  // Apply top bound
-  player.y = Math.max(0, player.y);
+  // No top bound - player can go above level
   
   player.onGround = false;
 
@@ -914,7 +1011,8 @@ function updateEnemies() {
     // Vertical movement
     enemy.y += enemy.velY;
     enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
-    const collisionsY = getCollidingTiles(enemyBox).filter((tile) => isSolidTile(tile.type));
+    // Enemies treat spikes as solid ground
+    const collisionsY = getCollidingTiles(enemyBox, true).filter((tile) => isSolidTile(tile.type) || tile.type === 'spike');
     collisionsY.forEach((tile) => {
       if (enemy.velY > 0) {
         enemy.y = tile.y - enemy.height;
@@ -930,7 +1028,8 @@ function updateEnemies() {
     if (enemy.onGround) {
       const frontX = enemy.direction > 0 ? enemy.x + enemy.width : enemy.x - 1;
       const footY = enemy.y + enemy.height + 1;
-      if (!isSolidAt(frontX, footY)) {
+      // Check if there is solid ground OR a spike at foot position
+      if (!isSolidAt(frontX, footY) && !isSpikeAt(frontX, footY)) {
         enemy.direction *= -1;
       }
     }
@@ -969,16 +1068,16 @@ function updateDeathAnimation() {
 function checkPlayerHazards() {
   const player = game.player;
 
-  // Check bottom bound (kills player)
+  // Check bottom bound (kills player only when completely out of bounds)
   const bottomBound = game.levelHeight * TILE_SIZE;
-  if (player.y + player.height > bottomBound) {
+  if (player.y > bottomBound) {
     killPlayer();
     return;
   }
 
   // Check spike collisions
   const nearbyTiles = getCollidingTiles(player, true);
-  const hitSpike = nearbyTiles.some((tile) => tile.type === 'spike' && rectsIntersect(player, tile));
+  const hitSpike = nearbyTiles.some((tile) => tile.type === 'spike' && spikeIntersect(player, tile));
   if (hitSpike) {
     killPlayer();
     return;
@@ -1092,21 +1191,26 @@ function renderHurtbox() {
   }
 }
 
-function getVertexMask(vx, vy) {
+function getVertexMask(vx, vy, tileType) {
   // Check the 4 tiles around vertex (vx, vy)
   // Returns a 4-bit mask: bit0=TL, bit1=TR, bit2=BL, bit3=BR
   let mask = 0;
-  if (isTileSolidAtCoords(vx - 1, vy - 1)) mask |= 1; // TL
-  if (isTileSolidAtCoords(vx, vy - 1))     mask |= 2; // TR
-  if (isTileSolidAtCoords(vx - 1, vy))     mask |= 4; // BL
-  if (isTileSolidAtCoords(vx, vy))         mask |= 8; // BR
+  if (isTileSolidAtCoords(vx - 1, vy - 1, tileType)) mask |= 1; // TL
+  if (isTileSolidAtCoords(vx, vy - 1, tileType))     mask |= 2; // TR
+  if (isTileSolidAtCoords(vx - 1, vy, tileType))     mask |= 4; // BL
+  if (isTileSolidAtCoords(vx, vy, tileType))         mask |= 8; // BR
   return mask;
 }
 
-function isTileSolidAtCoords(x, y) {
+function isTileSolidAtCoords(x, y, tileType) {
+  // Treat out of bounds as solid on left, right, and bottom (but not top)
+  if (x < 0 || x >= game.levelWidth || y >= game.levelHeight) return true;
+  if (y < 0) return false; // Top is open
+  
   const key = `${x},${y}`;
   const t = game.tiles[key];
-  return t === 'ground' || t === 'tile';
+  // Only match the same tile type for autotiling
+  return t === tileType;
 }
 
 function renderTiles() {
@@ -1132,17 +1236,84 @@ function renderTiles() {
       
       if (type === 'spike' && game.assets.spike) {
         drawTile(ctx, type, screenX, screenY, TILE_SIZE, 0, 0, game.assets.spike);
-      } else if (type === 'goal' || type === 'coin' || type === 'diamond') {
-        drawTile(ctx, type, screenX, screenY, TILE_SIZE);
+      } else if (type === 'coin') { 
+        if (!game.collectedCoins.has(`${x},${y}`) && game.assets.coin) {
+             // frame 0 is default state
+             ctx.drawImage(game.assets.coin, 0, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'diamond') { // Token logic
+        if (!game.collectedTokens.has(`${x},${y}`) && game.assets.token) {
+             // frame 0 is default state
+             ctx.drawImage(game.assets.token, 0, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'goal') {
+        if (game.assets.goal) {
+          // Draw full goal image with origin at bottom-left 16x16 tile
+          const goalWidth = game.assets.goal.width;
+          const goalHeight = game.assets.goal.height;
+          // Position so bottom-left aligns with the tile
+          const drawX = screenX;
+          const drawY = screenY + TILE_SIZE - goalHeight;
+          ctx.drawImage(game.assets.goal, 0, 0, goalWidth, goalHeight, drawX, drawY, goalWidth, goalHeight);
+        } else {
+          drawTile(ctx, type, screenX, screenY, TILE_SIZE);
+        }
       }
     }
   }
 
+  // Draw Coin Animations (overlay)
+  game.coinAnims.forEach(anim => {
+      const screenX = Math.round(anim.x - game.camera.x);
+      const screenY = Math.round(anim.y - game.camera.y);
+      // Anim frames 1, 2, 3
+      const frameIndex = 1 + Math.floor(anim.timer / 5); 
+      if (frameIndex <= 3 && game.assets.coin) {
+          ctx.drawImage(game.assets.coin, frameIndex * 16, 0, 16, 16, screenX, screenY, 16, 16);
+      }
+  });
+
+  // Draw Token Animations (overlay)
+  game.tokenAnims.forEach(anim => {
+      const screenX = Math.round(anim.x - game.camera.x);
+      let screenY = Math.round(anim.y - game.camera.y);
+      let frameIndex = 1 + Math.floor(anim.timer / 4); 
+      let alpha = 1.0;
+
+      // Linger on last frame (frame 7)
+      if (anim.timer >= 28) {
+          frameIndex = 7;
+      }
+
+      // Rise and fade phase (starts after lag)
+      if (anim.timer > 40) {
+          const rise = anim.timer - 40;
+          screenY -= rise * 0.5;
+          alpha = Math.max(0, 1 - (rise / 20));
+      }
+
+      if (game.assets.token && alpha > 0) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          // Clamp frame just in case
+          if (frameIndex > 7) frameIndex = 7; 
+          ctx.drawImage(game.assets.token, frameIndex * 16, 0, 16, 16, screenX, screenY, 16, 16);
+          ctx.restore();
+      }
+  });
+
   // Second pass: render ground tiles with autotiling
   // Iterate over all tiles in game.tiles instead of the full grid
+  const tilesheet1 = game.assets.tilesheet;
+  const tilesheet2 = game.assets.tilesheet2;
+  
   for (const key of Object.keys(game.tiles)) {
     const type = game.tiles[key];
     if (type !== 'ground' && type !== 'tile') continue;
+    
+    // Use tilesheet2 for ground, tilesheet1 for tile
+    const tilesheet = type === 'ground' ? tilesheet2 : tilesheet1;
+    const useTilesheet = tilesheet && tilesheet.width > 0;
 
     const [x, y] = key.split(',').map(Number);
     const screenX = Math.round(x * TILE_SIZE - game.camera.x);
@@ -1155,10 +1326,10 @@ function renderTiles() {
     if (useTilesheet) {
       // Calculate masks for each corner of this tile (Vertices)
       
-      const maskTL = getVertexMask(x, y);         // TL corner of tile is vertex (x,y)
-      const maskTR = getVertexMask(x + 1, y);     // TR corner of tile is vertex (x+1,y)
-      const maskBL = getVertexMask(x, y + 1);     // BL corner of tile is vertex (x,y+1)
-      const maskBR = getVertexMask(x + 1, y + 1); // BR corner of tile is vertex (x+1,y+1)
+      const maskTL = getVertexMask(x, y, type);         // TL corner of tile is vertex (x,y)
+      const maskTR = getVertexMask(x + 1, y, type);     // TR corner of tile is vertex (x+1,y)
+      const maskBL = getVertexMask(x, y + 1, type);     // BL corner of tile is vertex (x,y+1)
+      const maskBR = getVertexMask(x + 1, y + 1, type); // BR corner of tile is vertex (x+1,y+1)
 
       // Draw 4 sub-tiles (8x8 each) for this tile
       drawAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX,     screenY);
@@ -1247,9 +1418,9 @@ function renderEnemies() {
             ctx.scale(1, -1); // Upside down fall? "fall off the map"
         }
 
-        // Draw 16x16 sprite
-        // Offset by -8 to center
-        ctx.drawImage(game.assets.enemyWalk, frame * 16, 0, 16, 16, -8, -8, 16, 16);
+        // Draw 16x16 sprite, offset up 1 pixel
+        // Offset by -8 to center, and -1 to move up
+        ctx.drawImage(game.assets.enemyWalk, frame * 16, 0, 16, 16, -8, -9, 16, 16);
         ctx.restore();
     } else {
         // Fallback
@@ -1309,9 +1480,9 @@ function renderPlayer() {
     ctx.translate(cx, cy);
     if (flip) ctx.scale(-1, 1);
     
-    // Draw centered 16x16 sprite
-    // Offset by -8 to center 16px sprite on 0,0
-    ctx.drawImage(sprite, frame * 16, 0, 16, 16, -8, -8, 16, 16);
+    // Draw centered 16x16 sprite, offset up 1 pixel
+    // Offset by -8 to center 16px sprite on 0,0, and -1 to move up
+    ctx.drawImage(sprite, frame * 16, 0, 16, 16, -8, -9, 16, 16);
     
     ctx.restore();
   } else {
@@ -1333,8 +1504,20 @@ function getCollidingTiles(entity, includeHazards = false) {
       const key = `${x},${y}`;
       const type = game.tiles[key];
       if (!type) continue;
+      
+      // For solid collision, skip non-solid tiles
       if (!includeHazards && !isSolidTile(type)) continue;
-      tiles.push({ x: x * TILE_SIZE, y: y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, type });
+      // For hazard/goal detection, include everything when includeHazards is true
+      if (includeHazards || isSolidTile(type)) {
+        // Custom hitbox for goal: 3x40 pixels, centered horizontally, aligned to bottom
+        if (type === 'goal') {
+          const goalX = x * TILE_SIZE + (TILE_SIZE - 3) / 2; // Center horizontally
+          const goalY = y * TILE_SIZE + TILE_SIZE - 40; // Align to bottom
+          tiles.push({ x: goalX, y: goalY, width: 3, height: 40, type });
+        } else {
+          tiles.push({ x: x * TILE_SIZE, y: y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, type });
+        }
+      }
     }
   }
 
@@ -1342,7 +1525,7 @@ function getCollidingTiles(entity, includeHazards = false) {
 }
 
 function isSolidTile(type) {
-  return type === 'ground' || type === 'tile' || type === 'goal';
+  return type === 'ground' || type === 'tile';
 }
 
 function isSolidAt(px, py) {
@@ -1352,11 +1535,47 @@ function isSolidAt(px, py) {
   return isSolidTile(type);
 }
 
+function isSpikeAt(px, py) {
+  const x = Math.floor(px / TILE_SIZE);
+  const y = Math.floor(py / TILE_SIZE);
+  const type = game.tiles[`${x},${y}`];
+  return type === 'spike';
+}
+
 function rectsIntersect(a, b) {
   return a.x < b.x + b.width &&
     a.x + a.width > b.x &&
     a.y < b.y + b.height &&
     a.y + a.height > b.y;
+}
+
+function spikeIntersect(rect, tile) {
+  const tx = tile.x;
+  const ty = tile.y;
+  
+  // Rect relative to Tile
+  const rx = rect.x - tx;
+  const ry = rect.y - ty;
+  const rw = rect.width;
+  const rh = rect.height;
+
+  // 1. Precise Bounding Box Check (Triangle width 14px, height 16px)
+  // X range: [1, 15], Y range: [0, 16]
+  if (rx > 15 || rx + rw < 1 || ry > 16 || ry + rh < 0) return false;
+
+  // 2. Left Slope Separation Check (P1-P2 Edge)
+  // Triangle is to the right/down of line 16x + 7y = 128
+  // If entire rect is left/up (value < 128), no collision.
+  // Maximize 16x + 7y (Bottom-Right corner)
+  if (16 * (rx + rw) + 7 * (ry + rh) < 128) return false;
+
+  // 3. Right Slope Separation Check (P2-P3 Edge)
+  // Triangle is to the left/down of line 16x - 7y = 128
+  // If entire rect is right/up (value > 128), no collision.
+  // Minimize 16x - 7y (Bottom-Left corner)
+  if (16 * rx - 7 * (ry + rh) > 128) return false;
+
+  return true;
 }
 
 function clamp(value, min, max) {
@@ -1382,14 +1601,45 @@ function renderTimer() {
   const ms = Math.floor((time % 1000) / 10);
   const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
   
-  ctx.save();
-  ctx.font = 'bold 12px Roboto, sans-serif'; // Reduced font size
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-  ctx.fillText(timeString, game.width / 2 + 1, 16); // Shadow position
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(timeString, game.width / 2, 16); // Text position (same Y as shadow base, skewed X)
-  ctx.restore();
+  // Center alignment calculation
+  // 8px width per char (monospaced from sprite sheet)
+  const scale = 1;
+  const charWidth = 8 * scale;
+  const totalWidth = timeString.length * charWidth;
+  const startX = Math.floor(game.width / 2 - totalWidth / 2);
+  const startY = 8; // Top padding
+
+  if (game.assets.timerFont) {
+    drawBitmapText(ctx, timeString, startX, startY, scale);
+  }
+}
+
+function drawBitmapText(ctx, text, startX, startY, scale) {
+  const img = game.assets.timerFont;
+  if (!img) return;
+
+  let cursorX = startX;
+  const charSize = 8;
+  
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    let index = -1;
+
+    if (char >= '0' && char <= '9') {
+      index = char.charCodeAt(0) - 48; // 0-9
+    } else if (char === '.') {
+      index = 10; // 10th sprite
+    }
+    
+    if (index !== -1) {
+       ctx.drawImage(
+         img, 
+         index * charSize, 0, charSize, charSize, 
+         cursorX, startY, charSize * scale, charSize * scale
+       );
+    }
+    cursorX += charSize * scale;
+  }
 }
 
 function showLevelCompleteDialog() {

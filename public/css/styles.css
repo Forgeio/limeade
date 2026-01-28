@@ -1081,6 +1081,58 @@ body {
   transform: rotate(45deg);
 }
 
+/* Tile icons from sprite images */
+/* Removed old .tile-icon class as we use structure .tile-preview > .tile-img now */
+
+/* Tile icons wrapper */
+.tile-preview, .tile-composite {
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Composite tiles (constructed from 4 quadrants) */
+.tile-quadrant {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background-size: 128px 128px; /* 64px sheet * 2 */
+  image-rendering: pixelated;
+}
+
+/* Quadrant positions */
+.q-tl { top: 0; left: 0; }
+.q-tr { top: 0; left: 16px; }
+.q-bl { top: 16px; left: 0; }
+.q-br { top: 16px; left: 16px; }
+
+/* Tile preview canvas */
+.tile-preview-canvas {
+  width: 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Base image style - scale 2x to fill 32px box with 16px sprite */
+.tile-img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  transform-origin: 0 0;
+  transform: scale(2);
+  max-width: none; /* Prevent constraint */
+}
+
+/* Clean up old offset rules */
+/* Goal tile - show full 32x32 image without zoom */
+.tile-btn[data-tile="goal"] .tile-img {
+  transform: scale(1);
+}
+
 .toolbar-right {
   display: flex;
   gap: 12px;

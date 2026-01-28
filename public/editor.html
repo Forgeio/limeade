@@ -90,28 +90,40 @@
       </div>
       <div class="tile-selector">
         <button class="tile-btn" data-tile="ground" title="Ground">
-          <div class="tile-placeholder ground"></div>
+          <canvas id="preview-ground" class="tile-preview-canvas" width="32" height="32"></canvas>
         </button>
         <button class="tile-btn" data-tile="tile" title="Tile">
-          <div class="tile-placeholder tile"></div>
+          <canvas id="preview-tile" class="tile-preview-canvas" width="32" height="32"></canvas>
         </button>
         <button class="tile-btn" data-tile="enemy" title="Enemy">
-          <div class="tile-placeholder enemy"></div>
+          <div class="tile-preview">
+            <img src="graphics/enemy1_walk.png" alt="Enemy" class="tile-img">
+          </div>
         </button>
         <button class="tile-btn" data-tile="spike" title="Spike">
-          <div class="tile-placeholder spike"></div>
+          <div class="tile-preview">
+            <img src="graphics/spike.png" alt="Spike" class="tile-img">
+          </div>
         </button>
         <button class="tile-btn" data-tile="spawn" title="Spawn Point">
-          <div class="tile-placeholder spawn"></div>
+          <div class="tile-preview">
+            <img src="graphics/player_idle.png" alt="Spawn" class="tile-img">
+          </div>
         </button>
         <button class="tile-btn" data-tile="goal" title="Goal">
-          <div class="tile-placeholder goal"></div>
+          <div class="tile-preview">
+            <img src="graphics/goal.png" alt="Goal" class="tile-img">
+          </div>
         </button>
         <button class="tile-btn" data-tile="coin" title="Coin">
-          <div class="tile-placeholder coin"></div>
+          <div class="tile-preview">
+            <img src="graphics/coin.png" alt="Coin" class="tile-img">
+          </div>
         </button>
         <button class="tile-btn" data-tile="diamond" title="Diamond">
-          <div class="tile-placeholder diamond"></div>
+          <div class="tile-preview">
+            <img src="graphics/token.png" alt="Diamond" class="tile-img">
+          </div>
         </button>
       </div>
     </div>
