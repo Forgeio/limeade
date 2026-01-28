@@ -57,7 +57,8 @@ async function loadLevels() {
       const levelId = card.dataset.levelId;
       card.addEventListener('click', (e) => {
         if (!e.target.closest('.play-btn')) {
-          playLevel(levelId);
+          // Navigate to level detail page
+          window.location.href = `level.html?id=${levelId}`;
         }
       });
     });
@@ -168,9 +169,7 @@ function nextPage() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-// Play level function (placeholder)
+// Play level function
 function playLevel(levelId) {
-  console.log('Playing level:', levelId);
-  // TODO: Navigate to game player when implemented
-  alert(`Playing level: ${levelId}\nGame player coming soon!`);
+  window.location.href = `play.html?id=${levelId}`;
 }
