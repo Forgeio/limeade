@@ -211,7 +211,7 @@ router.put('/:id', async (req, res) => {
 
     // Check ownership
     const checkResult = await db.query(
-      'SELECT creator_id FROM levels WHERE id = $1',
+      'SELECT creator_id, published FROM levels WHERE id = $1',
       [id]
     );
 
@@ -221,6 +221,11 @@ router.put('/:id', async (req, res) => {
 
     if (checkResult.rows[0].creator_id !== req.user.id) {
       return res.status(403).json({ error: 'You do not have permission to edit this level' });
+    }
+    
+    // Prevent editing published levels
+    if (checkResult.rows[0].published) {
+      return res.status(403).json({ error: 'Published levels cannot be edited. Please create a copy in the editor.' });
     }
 
     // Handle thumbnail if provided
@@ -272,6 +277,29 @@ router.put('/:id', async (req, res) => {
       values.push(thumbnailPath);
     }
     if (published !== undefined) {
+      // Validate level requirements when publishing
+      if (published && level_data) {
+        // Check level size (min 32x18, max 250x250)
+        const width = level_data.width || 50;
+        const height = level_data.height || 18;
+        if (width < 32 || width > 250 || height < 18 || height > 250) {
+          return res.status(400).json({ error: 'Level size must be between 32x18 and 250x250' });
+        }
+        
+        // Check for spawn point
+        const tiles = level_data.tiles || {};
+        const hasSpawn = Object.values(tiles).includes('spawn');
+        if (!hasSpawn) {
+          return res.status(400).json({ error: 'Level must have a spawn point' });
+        }
+        
+        // Check for goal
+        const hasGoal = Object.values(tiles).includes('goal');
+        if (!hasGoal) {
+          return res.status(400).json({ error: 'Level must have a goal' });
+        }
+      }
+      
       updateFields.push(`published = $${paramCount++}`);
       values.push(published);
       if (published) {

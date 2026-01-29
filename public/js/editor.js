@@ -15,7 +15,7 @@ const editor = {
   canvas: null,
   ctx: null,
   gridWidth: 50,
-  gridHeight: 20,
+  gridHeight: 18,
   tileSize: 16,
   zoom: 1.0,
   targetZoom: 1.0,
@@ -57,6 +57,8 @@ const editor = {
   dragButton: null,
   mouseX: 0,
   mouseY: 0,
+  thumbnailMode: false,
+  capturingThumbnail: false,
   assets: {
     tilesheet: null,
     tilesheet2: null,
@@ -352,6 +354,9 @@ function handleMouseDown(e) {
     return;
   }
 
+  // Don't allow tile placement in thumbnail mode
+  if (editor.thumbnailMode) return;
+
   // Left/Right click for painting
   editor.isDragging = true;
   editor.dragButton = e.button;
@@ -421,6 +426,9 @@ function updateMousePosition(e) {
 
 // Place or remove tile
 function placeTile() {
+  // Don't place tiles in thumbnail mode
+  if (editor.thumbnailMode) return;
+  
   const scaledTileSize = editor.tileSize * editor.zoom;
   const gridX = Math.floor((editor.mouseX + editor.cameraX) / scaledTileSize);
   const gridY = Math.floor((editor.mouseY + editor.cameraY) / scaledTileSize);
@@ -478,6 +486,19 @@ function placeTile() {
 
 // Handle keyboard input
 function handleKeyDown(e) {
+  // Handle thumbnail mode
+  if (editor.thumbnailMode) {
+    if (e.code === 'Enter') {
+      captureThumbnail();
+      return;
+    }
+    if (e.code === 'Escape') {
+      exitThumbnailMode(false);
+      return;
+    }
+    // Allow WASD/Arrow keys for camera movement in thumbnail mode
+  }
+  
   // Ignore movement keys if focused on text input
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
     return;
@@ -605,49 +626,36 @@ function render() {
   ctx.fillStyle = '#87ceeb';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   
-  // Draw grid
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
-  ctx.lineWidth = 1;
-  
   const startX = Math.floor(camX / scaledTileSize);
   const startY = Math.floor(camY / scaledTileSize);
   const endX = Math.min(editor.gridWidth, startX + Math.ceil(canvas.width / scaledTileSize) + 1);
   const endY = Math.min(editor.gridHeight, startY + Math.ceil(canvas.height / scaledTileSize) + 1);
   
-  // Draw vertical grid lines
-  for (let x = startX; x <= endX; x++) {
-    const screenX = Math.floor(x * scaledTileSize - camX);
-    ctx.beginPath();
-    ctx.moveTo(screenX + 0.5, 0);
-    ctx.lineTo(screenX + 0.5, canvas.height);
-    ctx.stroke();
-  }
-  
-  // Draw horizontal grid lines
-  for (let y = startY; y <= endY; y++) {
-    const screenY = Math.floor(y * scaledTileSize - camY);
-    ctx.beginPath();
-    ctx.moveTo(0, screenY + 0.5);
-    ctx.lineTo(canvas.width, screenY + 0.5);
-    ctx.stroke();
-  }
-  
-  // First pass: Draw non-ground tiles (spikes, coins, enemies, etc.)
-  for (let y = startY; y < endY; y++) {
-    for (let x = startX; x < endX; x++) {
-      const key = `${x},${y}`;
-      const type = editor.levelData[key];
-      if (!type) continue;
-      if (type === 'ground' || type === 'tile') continue; // Skip for second pass
-      
+  // Draw grid (hidden in thumbnail mode and when capturing)
+  if (!editor.thumbnailMode && !editor.capturingThumbnail) {
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.lineWidth = 1;
+    
+    // Draw vertical grid lines
+    for (let x = startX; x <= endX; x++) {
       const screenX = Math.floor(x * scaledTileSize - camX);
+      ctx.beginPath();
+      ctx.moveTo(screenX + 0.5, 0);
+      ctx.lineTo(screenX + 0.5, canvas.height);
+      ctx.stroke();
+    }
+    
+    // Draw horizontal grid lines
+    for (let y = startY; y <= endY; y++) {
       const screenY = Math.floor(y * scaledTileSize - camY);
-      
-      renderEditorTile(ctx, type, screenX, screenY, scaledTileSize);
+      ctx.beginPath();
+      ctx.moveTo(0, screenY + 0.5);
+      ctx.lineTo(canvas.width, screenY + 0.5);
+      ctx.stroke();
     }
   }
   
-  // Second pass: Draw ground tiles with autotiling
+  // First pass: Draw ground tiles with autotiling
   const tilesheet1 = editor.assets.tilesheet;
   const tilesheet2 = editor.assets.tilesheet2;
   
@@ -688,8 +696,24 @@ function render() {
     }
   }
 
-  // Draw ghost tile
-  if (!editor.isPanning) {
+  // Second pass: Draw non-ground tiles (spikes, coins, enemies, spawn, goal, etc.)
+  for (const key of Object.keys(editor.levelData)) {
+    const type = editor.levelData[key];
+    if (type === 'ground' || type === 'tile') continue; // Already drawn in first pass
+    
+    const [x, y] = key.split(',').map(Number);
+    const screenX = Math.floor(x * scaledTileSize - camX);
+    const screenY = Math.floor(y * scaledTileSize - camY);
+    
+    // Skip if off-screen
+    if (screenX + scaledTileSize < 0 || screenX > canvas.width ||
+        screenY + scaledTileSize < 0 || screenY > canvas.height) continue;
+    
+    renderEditorTile(ctx, type, screenX, screenY, scaledTileSize);
+  }
+
+  // Draw ghost tile (only when not in thumbnail mode or capturing)
+  if (!editor.isPanning && !editor.thumbnailMode && !editor.capturingThumbnail) {
     const gridX = Math.floor((editor.mouseX + camX) / scaledTileSize);
     const gridY = Math.floor((editor.mouseY + camY) / scaledTileSize);
     
@@ -713,6 +737,43 @@ function render() {
         ctx.globalAlpha = 1.0;
       }
     }
+  }
+  
+  // Draw thumbnail capture area outline when in thumbnail mode
+  if (editor.thumbnailMode) {
+    // Calculate grid-aligned capture area (16:9 ratio)
+    const captureArea = getThumbnailCaptureArea();
+    const outlineX = Math.max(0, captureArea.outlineX);
+    const outlineY = Math.max(0, captureArea.outlineY);
+    const outlineW = Math.min(captureArea.outlineW, canvas.width - outlineX);
+    const outlineH = Math.min(captureArea.outlineH, canvas.height - outlineY);
+    
+    // Draw semi-transparent overlay outside the capture area
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    // Top bar
+    if (outlineY > 0) {
+      ctx.fillRect(0, 0, canvas.width, outlineY);
+    }
+    // Bottom bar
+    if (outlineY + outlineH < canvas.height) {
+      ctx.fillRect(0, outlineY + outlineH, canvas.width, canvas.height - outlineY - outlineH);
+    }
+    // Left bar
+    if (outlineX > 0) {
+      ctx.fillRect(0, outlineY, outlineX, outlineH);
+    }
+    // Right bar
+    if (outlineX + outlineW < canvas.width) {
+      ctx.fillRect(outlineX + outlineW, outlineY, canvas.width - outlineX - outlineW, outlineH);
+    }
+    
+    // Draw outline border
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(outlineX, outlineY, outlineW, outlineH);
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(outlineX + 2, outlineY + 2, outlineW - 4, outlineH - 4);
   }
   
   // Update level size display - and now zoom
@@ -885,7 +946,7 @@ async function createNewDraft() {
   editor.levelMusic = '';
   editor.levelData = {};
   editor.gridWidth = 50;
-  editor.gridHeight = 20;
+  editor.gridHeight = 18;
 
   const musicSelect = document.getElementById('musicSelect');
   if (musicSelect) {
@@ -1086,7 +1147,8 @@ async function loadMusicList() {
     files.forEach(file => {
       const option = document.createElement('option');
       option.value = file;
-      option.textContent = file;
+      // Remove .ogg extension for display
+      option.textContent = file.replace(/\.ogg$/i, '');
       select.appendChild(option);
     });
 
@@ -1214,44 +1276,89 @@ async function loadLevel(levelId) {
     
     if (response.ok) {
       const level = await response.json();
-      editor.levelId = level.id;
-      editor.levelTitle = level.title || '';
       
-      // Update level name input
-      const levelNameInput = document.getElementById('levelName');
-      if (levelNameInput) {
-        levelNameInput.value = editor.levelTitle;
-      }
-      
-      if (level.level_data) {
-        editor.gridWidth = level.level_data.width || 50;
-        editor.gridHeight = level.level_data.height || 20;
-        editor.levelData = level.level_data.tiles || {};
-        editor.levelMusic = level.level_data.music || '';
-
-        const musicSelect = document.getElementById('musicSelect');
-        if (musicSelect) {
-            musicSelect.value = editor.levelMusic;
+      // If the level is published, create a new draft copy instead of editing it
+      if (level.published) {
+        // Create a copy as a new draft
+        editor.levelId = null; // Clear level ID to force creation of new draft
+        editor.levelTitle = `Copy of ${level.title || 'Untitled'}`;
+        editor.isNewDraft = true;
+        
+        // Update level name input
+        const levelNameInput = document.getElementById('levelName');
+        if (levelNameInput) {
+          levelNameInput.value = editor.levelTitle;
         }
         
-        // Restore spawn and goal positions
-        Object.keys(editor.levelData).forEach(key => {
-          if (editor.levelData[key] === 'spawn') {
-            editor.spawnPosition = key;
-          } else if (editor.levelData[key] === 'goal') {
-            editor.goalPosition = key;
-          }
-        });
-      }
-      
-      updateDefaultZoom();
-      updateStatus('Level loaded');
-      render();
-      
-      // Update URL
-      const newUrl = `${window.location.pathname}?id=${levelId}`;
-      window.history.replaceState({}, '', newUrl);
+        if (level.level_data) {
+          editor.gridWidth = level.level_data.width || 50;
+          editor.gridHeight = level.level_data.height || 20;
+          editor.levelData = level.level_data.tiles || {};
+          editor.levelMusic = level.level_data.music || '';
 
+          const musicSelect = document.getElementById('musicSelect');
+          if (musicSelect) {
+              musicSelect.value = editor.levelMusic;
+          }
+          
+          // Restore spawn and goal positions
+          Object.keys(editor.levelData).forEach(key => {
+            if (editor.levelData[key] === 'spawn') {
+              editor.spawnPosition = key;
+            } else if (editor.levelData[key] === 'goal') {
+              editor.goalPosition = key;
+            }
+          });
+        }
+        
+        editor.hasUnsavedChanges = true; // Mark as having changes to trigger save
+        updateDefaultZoom();
+        updateStatus('Opened copy of published level as new draft');
+        render();
+        
+        // Don't update URL since this is a new draft
+        window.history.replaceState({}, '', window.location.pathname);
+      } else {
+        // Level is a draft, load it normally
+        editor.levelId = level.id;
+        editor.levelTitle = level.title || '';
+        editor.isNewDraft = false;
+        
+        // Update level name input
+        const levelNameInput = document.getElementById('levelName');
+        if (levelNameInput) {
+          levelNameInput.value = editor.levelTitle;
+        }
+        
+        if (level.level_data) {
+          editor.gridWidth = level.level_data.width || 50;
+          editor.gridHeight = level.level_data.height || 20;
+          editor.levelData = level.level_data.tiles || {};
+          editor.levelMusic = level.level_data.music || '';
+
+          const musicSelect = document.getElementById('musicSelect');
+          if (musicSelect) {
+              musicSelect.value = editor.levelMusic;
+          }
+          
+          // Restore spawn and goal positions
+          Object.keys(editor.levelData).forEach(key => {
+            if (editor.levelData[key] === 'spawn') {
+              editor.spawnPosition = key;
+            } else if (editor.levelData[key] === 'goal') {
+              editor.goalPosition = key;
+            }
+          });
+        }
+        
+        updateDefaultZoom();
+        updateStatus('Level loaded');
+        render();
+        
+        // Update URL
+        const newUrl = `${window.location.pathname}?id=${levelId}`;
+        window.history.replaceState({}, '', newUrl);
+      }
     } else {
       updateStatus('Error loading level');
       createNewDraft();
@@ -1396,7 +1503,8 @@ function applyResize() {
   const width = parseInt(document.getElementById('levelWidth').value);
   const height = parseInt(document.getElementById('levelHeight').value);
   
-  if (width >= 10 && width <= 200 && height >= 10 && height <= 100) {
+  // Minimum 32x18 (thumbnail size), maximum 250x250
+  if (width >= 32 && width <= 250 && height >= 18 && height <= 250) {
     const oldWidth = editor.gridWidth;
     const oldHeight = editor.gridHeight;
     
@@ -1483,26 +1591,71 @@ function testLevel() {
   window.location.href = `/play?${params.toString()}`;
 }
 
-// Publish level (placeholder)
+// Publish level - show publish dialog in editor
 async function publishLevel() {
-    // If we have an ID, assume it's a draft and go to play/test mode with publish intent
-    if (editor.levelId) {
-        // Force save before redirecting
-        editor.hasUnsavedChanges = true;
-        await autoSave();
-        window.location.href = `/play?id=${editor.levelId}&mode=publish`;
-    } else if (editor.isNewDraft) {
-        // New unsaved draft - save it first then redirect
-        editor.hasUnsavedChanges = true;
-        await autoSave();
-        if (editor.levelId) {
-            window.location.href = `/play?id=${editor.levelId}&mode=publish`;
-        } else {
-            alert('Please save the level as a draft first.');
-        }
-    } else {
-        alert('Please save the level as a draft first.');
-    }
+  // Save first if there are unsaved changes
+  if (editor.hasUnsavedChanges) {
+    editor.hasUnsavedChanges = true;
+    await autoSave();
+  }
+  
+  if (!editor.levelId) {
+    showSaveDraftFirstDialog();
+    return;
+  }
+  
+  showPublishDialog();
+}
+
+// Show dialog asking user to save draft first
+function showSaveDraftFirstDialog() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+  
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    padding: 32px;
+    border-radius: 8px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+  `;
+  
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 16px 0; font-size: 24px; color: #51cf66;">Save Draft First</h2>
+    <p style="margin: 16px 0 24px 0; color: #666; line-height: 1.5;">
+      Please save your level as a draft before testing or publishing.
+    </p>
+    <button id="closeSaveDraftDialog" style="
+      background: #51cf66;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: Roboto, sans-serif;
+    ">OK</button>
+  `;
+  
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  
+  document.getElementById('closeSaveDraftDialog').addEventListener('click', () => {
+    document.body.removeChild(overlay);
+  });
 }
 
 // Delete the current draft - Deprecated helper, moving logic to deleteLevelItem
@@ -1515,6 +1668,9 @@ async function deleteDraft() {
 // Handle mouse wheel (touchpad scrolling) -> NOW ZOOM
 function handleWheel(e) {
   e.preventDefault();
+  
+  // Disable zooming in thumbnail mode
+  if (editor.thumbnailMode) return;
   
   // Get current power of 2 exponent
   const currentExp = Math.log2(editor.targetZoom);
@@ -1585,3 +1741,367 @@ function clampCamera() {
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', initEditor);
+
+// Publish Dialog Functions
+function showPublishDialog() {
+  const overlay = document.createElement('div');
+  overlay.id = 'publishOverlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  `;
+  
+  const dialog = document.createElement('div');
+  dialog.style.cssText = `
+    background: white;
+    padding: 32px;
+    border-radius: 8px;
+    max-width: 500px;
+    width: 90%;
+  `;
+  
+  dialog.innerHTML = `
+    <h2 style="margin: 0 0 24px 0; font-size: 28px; color: #51cf66;">Publish Your Level</h2>
+    <div style="margin-bottom: 16px; text-align: left;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Level Title (Max 30 chars)</label>
+      <input type="text" id="publishTitle" maxlength="30" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      " placeholder="Enter level title" value="${(editor.levelTitle || '').replace(/"/g, '&quot;')}">
+    </div>
+    <div style="margin-bottom: 16px; text-align: left;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Description (Max 255 chars)</label>
+      <textarea id="publishDescription" maxlength="255" style="
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+        resize: vertical;
+        min-height: 80px;
+        box-sizing: border-box;
+      " placeholder="Describe your level..."></textarea>
+    </div>
+    <div style="margin-bottom: 24px;">
+      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Thumbnail</label>
+      <div style="display: flex; gap: 16px; align-items: flex-start;">
+        <div id="thumbnailPreview" style="
+          width: 160px; 
+          height: 90px; 
+          background: #f5f5f5; 
+          border: 1px solid #ddd; 
+          border-radius: 4px;
+          display: flex; 
+          align-items: center; 
+          justify-content: center;
+          overflow: hidden;
+        ">
+          ${editor.thumbnailData ? `<img src="${editor.thumbnailData}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="font-size: 12px; color: #777;">No Image</span>'}
+        </div>
+        <button id="setThumbnailBtn" type="button" style="
+          background: #f5f5f5;
+          color: #333;
+          border: 1px solid #ddd;
+          padding: 8px 16px;
+          font-size: 14px;
+          border-radius: 4px;
+          cursor: pointer;
+          font-family: Roboto, sans-serif;
+        ">Set Thumbnail</button>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; justify-content: flex-end;">
+      <button id="cancelPublish" style="
+        background: #ddd;
+        color: #333;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Cancel</button>
+      <button id="testAndPublish" style="
+        background: #51cf66;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        font-size: 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-family: Roboto, sans-serif;
+      ">Test & Publish</button>
+    </div>
+  `;
+  
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  
+  // Thumbnail button handler
+  document.getElementById('setThumbnailBtn').addEventListener('click', () => {
+    // Save current form state
+    editor.publishFormData = {
+      title: document.getElementById('publishTitle').value,
+      description: document.getElementById('publishDescription').value
+    };
+    
+    document.body.removeChild(overlay);
+    startThumbnailMode();
+  });
+
+  document.getElementById('cancelPublish').addEventListener('click', () => {
+    document.body.removeChild(overlay);
+  });
+  
+  document.getElementById('testAndPublish').addEventListener('click', async () => {
+    const title = document.getElementById('publishTitle').value.trim();
+    const description = document.getElementById('publishDescription').value.trim();
+    
+    // Client-side validation
+    if (!title) {
+      alert('Please enter a title for your level');
+      return;
+    }
+    
+    // Store publish data in sessionStorage for later use in play.js
+    sessionStorage.setItem('publishData', JSON.stringify({
+      title,
+      description,
+      thumbnail: editor.thumbnailData || null
+    }));
+    
+    document.body.removeChild(overlay);
+    
+    // Redirect to play mode for testing before publishing
+    window.location.href = `/play?id=${editor.levelId}&mode=publish`;
+  });
+}
+
+function startThumbnailMode() {
+  editor.thumbnailMode = true;
+  
+  // Save current zoom and set to 400%
+  editor.savedZoom = editor.zoom;
+  editor.savedTargetZoom = editor.targetZoom;
+  editor.zoom = 4;
+  editor.targetZoom = 4;
+  clampCamera();
+  
+  // Hide toolbar and status bar
+  const toolbar = document.querySelector('.editor-toolbar');
+  if (toolbar) {
+    toolbar.style.visibility = 'hidden';
+  }
+  const statusBar = document.querySelector('.editor-status');
+  if (statusBar) {
+    statusBar.style.visibility = 'hidden';
+  }
+  
+  // Create instructions overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'thumbnailOverlay';
+  overlay.style.cssText = `
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    pointer-events: none;
+  `;
+  
+  overlay.innerHTML = `
+    <div style="background: rgba(0,0,0,0.8); color: white; padding: 16px 24px; border-radius: 8px; text-align: center;">
+      <div style="font-weight: bold; font-size: 18px; margin-bottom: 8px;">Thumbnail Selection</div>
+      <div>Use <b>WASD</b> or <b>Arrow Keys</b> to position the view</div>
+      <div>Press <b>Enter</b> to Capture • <b>Escape</b> to Cancel</div>
+    </div>
+  `;
+  
+  document.body.appendChild(overlay);
+}
+
+// Calculate grid-aligned thumbnail capture area with 16:9 ratio (32x18 tiles)
+function getThumbnailCaptureArea() {
+  const scaledTileSize = editor.tileSize * editor.zoom;
+  const canvas = editor.canvas;
+  
+  // Thumbnail will be 32x18 tiles (16:9 ratio)
+  const tilesWide = 32;
+  const tilesTall = 18;
+  
+  // Get the tile coordinates at the center of the screen
+  const centerWorldX = editor.cameraX + canvas.width / 2;
+  const centerWorldY = editor.cameraY + canvas.height / 2;
+  const centerTileX = Math.floor(centerWorldX / scaledTileSize);
+  const centerTileY = Math.floor(centerWorldY / scaledTileSize);
+  
+  // Calculate top-left tile of capture area, centered on view
+  let startTileX = centerTileX - Math.floor(tilesWide / 2);
+  let startTileY = centerTileY - Math.floor(tilesTall / 2);
+  
+  // Clamp to level bounds
+  startTileX = Math.max(0, Math.min(editor.gridWidth - tilesWide, startTileX));
+  startTileY = Math.max(0, Math.min(editor.gridHeight - tilesTall, startTileY));
+  
+  // Convert tile positions back to screen coordinates
+  const outlineX = startTileX * scaledTileSize - editor.cameraX;
+  const outlineY = startTileY * scaledTileSize - editor.cameraY;
+  const outlineW = tilesWide * scaledTileSize;
+  const outlineH = tilesTall * scaledTileSize;
+  
+  return {
+    outlineX: outlineX,
+    outlineY: outlineY,
+    outlineW: outlineW,
+    outlineH: outlineH,
+    tilesWide: tilesWide,
+    tilesTall: tilesTall,
+    startTileX: startTileX,
+    startTileY: startTileY
+  };
+}
+
+function exitThumbnailMode(captured) {
+  // Remove overlay
+  const overlay = document.getElementById('thumbnailOverlay');
+  if (overlay) {
+    document.body.removeChild(overlay);
+  }
+  
+  // Restore zoom
+  if (editor.savedZoom !== undefined) {
+    editor.zoom = editor.savedZoom;
+    editor.targetZoom = editor.savedTargetZoom;
+    clampCamera();
+  }
+  
+  // Restore toolbar and status bar
+  const toolbar = document.querySelector('.editor-toolbar');
+  if (toolbar) {
+    toolbar.style.visibility = '';
+  }
+  const statusBar = document.querySelector('.editor-status');
+  if (statusBar) {
+    statusBar.style.visibility = '';
+  }
+  
+  editor.thumbnailMode = false;
+  
+  if (!captured) {
+    showPublishDialog();
+  }
+}
+
+function captureThumbnail() {
+  // Calculate which tiles are visible in the center of the current view
+  const scaledTileSize = editor.tileSize * editor.zoom;
+  
+  // Get the tile coordinates at the center of the screen
+  const centerWorldX = editor.cameraX + editor.canvas.width / 2;
+  const centerWorldY = editor.cameraY + editor.canvas.height / 2;
+  const centerTileX = Math.floor(centerWorldX / scaledTileSize);
+  const centerTileY = Math.floor(centerWorldY / scaledTileSize);
+  
+  // Thumbnail will be 32x18 tiles (16:9 ratio at 16px = 512x288)
+  const tilesWide = 32;
+  const tilesTall = 18;
+  
+  // Calculate top-left tile of capture area, centered on view
+  let startTileX = centerTileX - Math.floor(tilesWide / 2);
+  let startTileY = centerTileY - Math.floor(tilesTall / 2);
+  
+  // Clamp to level bounds
+  startTileX = Math.max(0, Math.min(editor.gridWidth - tilesWide, startTileX));
+  startTileY = Math.max(0, Math.min(editor.gridHeight - tilesTall, startTileY));
+  
+  // Render to offscreen canvas at 1:1 scale (16px per tile)
+  const tileSize = 16;
+  const outputWidth = tilesWide * tileSize;
+  const outputHeight = tilesTall * tileSize;
+  
+  const canvas = document.createElement('canvas');
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  
+  // Draw sky background
+  ctx.fillStyle = '#87ceeb';
+  ctx.fillRect(0, 0, outputWidth, outputHeight);
+  
+  // First pass: Draw ground tiles with autotiling
+  const tilesheet1 = editor.assets.tilesheet;
+  const tilesheet2 = editor.assets.tilesheet2;
+  
+  for (const key of Object.keys(editor.levelData)) {
+    const type = editor.levelData[key];
+    if (type !== 'ground' && type !== 'tile') continue;
+    
+    const [x, y] = key.split(',').map(Number);
+    
+    // Skip if outside capture area
+    if (x < startTileX || x >= startTileX + tilesWide ||
+        y < startTileY || y >= startTileY + tilesTall) continue;
+    
+    const screenX = (x - startTileX) * tileSize;
+    const screenY = (y - startTileY) * tileSize;
+    
+    const tilesheet = type === 'ground' ? tilesheet2 : tilesheet1;
+    
+    if (tilesheet && tilesheet.width > 0) {
+      // Calculate masks for each corner (vertices)
+      const maskTL = getEditorVertexMask(x, y, type);
+      const maskTR = getEditorVertexMask(x + 1, y, type);
+      const maskBL = getEditorVertexMask(x, y + 1, type);
+      const maskBR = getEditorVertexMask(x + 1, y + 1, type);
+      
+      // Draw 4 sub-tiles at 8px each (half of 16)
+      const halfSize = 8;
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskTL, 3, screenX, screenY, halfSize, halfSize);
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskTR, 2, screenX + halfSize, screenY, halfSize, halfSize);
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskBL, 1, screenX, screenY + halfSize, halfSize, halfSize);
+      drawEditorAutoTileQuadrant(ctx, tilesheet, maskBR, 0, screenX + halfSize, screenY + halfSize, halfSize, halfSize);
+    } else {
+      ctx.fillStyle = '#8b4513';
+      ctx.fillRect(screenX, screenY, tileSize, tileSize);
+    }
+  }
+  
+  // Second pass: Draw non-ground tiles
+  for (const key of Object.keys(editor.levelData)) {
+    const type = editor.levelData[key];
+    if (type === 'ground' || type === 'tile') continue;
+    
+    const [x, y] = key.split(',').map(Number);
+    
+    // Skip if outside capture area
+    if (x < startTileX || x >= startTileX + tilesWide ||
+        y < startTileY || y >= startTileY + tilesTall) continue;
+    
+    const screenX = (x - startTileX) * tileSize;
+    const screenY = (y - startTileY) * tileSize;
+    
+    renderEditorTile(ctx, type, screenX, screenY, tileSize);
+  }
+  
+  const dataUrl = canvas.toDataURL('image/png', 0.9);
+  
+  exitThumbnailMode(true);
+  
+  // Store and reshow publish dialog
+  editor.thumbnailData = dataUrl;
+  showPublishDialog();
+}
+

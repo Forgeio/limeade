@@ -257,18 +257,68 @@ async function initGame() {
 }
 
 function resizeCanvas() {
+  // Base height fixed at 224 (14 tiles), width adjusts to aspect ratio
+  const BASE_HEIGHT = 224;
+  const MIN_WIDTH = 256;   // 16 tiles, ~8:7 aspect
+  const MAX_WIDTH = 528;   // 33 tiles, extra buffer for edge coverage
+  
+  // Aspect ratio limits
+  const MIN_ASPECT = 1.33; // ~4:3
+  const MAX_ASPECT = 2.33; // ~21:9
+  
+  // Calculate level dimensions in pixels
+  const levelPixelWidth = game.levelWidth * TILE_SIZE;
+  const levelPixelHeight = game.levelHeight * TILE_SIZE;
+  
+  // Get container dimensions
   const container = document.querySelector('.game-container');
-  // Set consistent vertical viewing area (e.g. 15 tiles height)
-  // This scales the rendered area consistently regardless of window size
-  // 15 tiles * 16px = 240px
-  const TARGET_HEIGHT = 240; 
-  const aspect = container.clientWidth / container.clientHeight;
+  const containerWidth = container.clientWidth;
+  const containerHeight = container.clientHeight;
+  const containerAspect = containerWidth / containerHeight;
+  
+  // Clamp container aspect to limits
+  const clampedAspect = Math.max(MIN_ASPECT, Math.min(MAX_ASPECT, containerAspect));
+  
+  // Calculate canvas width based on clamped aspect, round UP to next tile to avoid gaps
+  let canvasHeight = BASE_HEIGHT;
+  let canvasWidth = Math.ceil((BASE_HEIGHT * clampedAspect) / TILE_SIZE) * TILE_SIZE;
+  
+  // Clamp width to min/max
+  canvasWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, canvasWidth));
+  
+  // If level is smaller than view, shrink canvas to level size (in tile increments)
+  if (levelPixelWidth > 0 && levelPixelWidth < canvasWidth) {
+    canvasWidth = Math.max(MIN_WIDTH, Math.floor(levelPixelWidth / TILE_SIZE) * TILE_SIZE);
+  }
+  if (levelPixelHeight > 0 && levelPixelHeight < canvasHeight) {
+    canvasHeight = Math.max(176, Math.floor(levelPixelHeight / TILE_SIZE) * TILE_SIZE);
+  }
 
-  game.canvas.height = TARGET_HEIGHT;
-  game.canvas.width = Math.ceil(TARGET_HEIGHT * aspect);
+  game.canvas.width = canvasWidth;
+  game.canvas.height = canvasHeight;
 
   game.width = game.canvas.width;
   game.height = game.canvas.height;
+  
+  // Scale canvas to FILL container (may crop edges slightly but no gaps)
+  const canvasAspect = canvasWidth / canvasHeight;
+  
+  let displayWidth, displayHeight;
+  
+  // Always fill the container completely
+  if (containerAspect > canvasAspect) {
+    // Container is wider - fit to width, may overflow height slightly
+    displayWidth = containerWidth;
+    displayHeight = displayWidth / canvasAspect;
+  } else {
+    // Container is taller - fit to height, may overflow width slightly
+    displayHeight = containerHeight;
+    displayWidth = displayHeight * canvasAspect;
+  }
+  
+  // Apply CSS sizing for uniform scaling
+  game.canvas.style.width = `${Math.floor(displayWidth)}px`;
+  game.canvas.style.height = `${Math.floor(displayHeight)}px`;
   
   // Re-disable smoothing after resize
   if (game.ctx) game.ctx.imageSmoothingEnabled = false;
@@ -306,15 +356,6 @@ async function setupControls() {
     // Correctly ignore inputs when typing
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-    // Allow thumbnail mode to control camera regardless of check below
-    if (game.thumbnailMode) {
-        if (e.code === keyMap.left) game.keys.left = true;
-        if (e.code === keyMap.right) game.keys.right = true;
-        if (e.code === keyMap.up) game.keys.up = true;
-        if (e.code === keyMap.down) game.keys.down = true;
-        return;
-    }
-
     // Ignore game controls if level is completed (except possibly navigation keys if used for menus, but here we want to stop movement)
     if (game.levelCompleted || game.paused) return;
 
@@ -343,10 +384,6 @@ async function setupControls() {
   window.addEventListener('keyup', (e) => {
     // Also handle Enter to start if on start menu, and Esc to pause
     if (e.code === 'Enter') {
-        if (game.thumbnailMode) {
-            captureThumbnail();
-            return;
-        }
         if (game.paused) {
             hidePauseMenu();
             resumeGame();
@@ -354,13 +391,6 @@ async function setupControls() {
     }
     
     if (e.code === 'Escape') {
-        if (game.thumbnailMode) {
-             // Cancel thumbnail mode
-            document.body.removeChild(document.getElementById('thumbnailOverlay'));
-            game.thumbnailMode = false;
-            showPublishDialog(new URLSearchParams(window.location.search).get('id'));
-            return;
-        }
         if (!game.paused && !game.levelCompleted) {
             pauseGame();
         } else if (game.paused) {
@@ -464,15 +494,25 @@ function applyLevelData(level) {
   game.levelData = level.level_data || {};
   game.levelInfo = level; // Store full metadata
   
+  // Check if level is published and if we're in publish mode
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+  const isPublished = level.published === true || level.published === 1;
+  
+  // Only show start menu for published levels that aren't being tested for publishing
+  const shouldShowStartMenu = isPublished && mode !== 'publish';
+  
   // Set initial state
-  game.paused = true;
-  game.started = false;
+  game.paused = shouldShowStartMenu;
+  game.started = !shouldShowStartMenu;
   
   resetLevelState();
   resetPlayer();
   
-  // Show start menu
-  showPauseMenu();
+  // Show start menu only for published levels (not in test/publish mode)
+  if (shouldShowStartMenu) {
+    showPauseMenu();
+  }
 }
 
 function resetLevelState() {
@@ -647,8 +687,6 @@ function gameLoop(timestamp) {
       update();
       accumulator -= TIMESTEP;
     }
-  } else if (game.thumbnailMode) {
-      updateThumbnailCamera();
   }
   
   render();
@@ -1948,12 +1986,12 @@ function showLevelCompleteDialog() {
   if (fromEditor) {
     // Return to editor after short delay
     setTimeout(() => {
-      const target = levelId ? `editor.html?id=${levelId}` : 'editor.html';
+      const target = levelId ? `/editor?id=${levelId}` : '/editor';
       window.location.href = target;
     }, 1500);
   } else if (mode === 'publish') {
-    // Show publish dialog
-    showPublishDialog(levelId);
+    // If in publish mode, show completion message and allow publishing
+    showPublishCompleteDialog(levelId);
   } else {
     // Show completion dialog for played levels and record stats
     recordLevelCompletion(levelId);
@@ -2049,6 +2087,12 @@ async function recordLevelCompletion(levelId) {
 
 // Show publish dialog
 function showPublishDialog(levelId) {
+  // This function is now deprecated - publishing happens from editor
+  // Redirect back to editor for publishing
+  window.location.href = `/editor?id=${levelId}`;
+}
+
+function showPublishCompleteDialog(levelId) {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
     position: fixed;
@@ -2068,93 +2112,20 @@ function showPublishDialog(levelId) {
     background: white;
     padding: 32px;
     border-radius: 8px;
-    max-width: 500px;
-    width: 90%;
+    text-align: center;
+    max-width: 400px;
   `;
   
+  const seconds = Math.floor(game.timer.finalTime / 1000);
+  const ms = Math.floor((game.timer.finalTime % 1000) / 10);
+  const timeString = `${seconds}.${ms.toString().padStart(2, '0')}`;
+  
   dialog.innerHTML = `
-    <h2 style="margin: 0 0 24px 0; font-size: 28px; color: #51cf66;">Publish Your Level</h2>
-    <div style="margin-bottom: 16px; text-align: left;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Level Title (Max 30 chars)</label>
-      <input type="text" id="publishTitle" maxlength="30" style="
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
-        box-sizing: border-box;
-      " placeholder="Enter level title" value="${(game.currentLevelTitle || '').replace(/"/g, '&quot;')}">
-    </div>
-    <div style="margin-bottom: 16px; text-align: left;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Description (Max 255 chars)</label>
-      <textarea id="publishDescription" maxlength="255" style="
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
-        resize: vertical;
-        min-height: 80px;
-        box-sizing: border-box;
-      " placeholder="Describe your level..."></textarea>
-    </div>
-    <div style="margin-bottom: 16px; text-align: left; opacity: 0.5;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Optional Timer (Coming Soon)</label>
-      <input type="number" disabled style="
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
-        box-sizing: border-box;
-      " placeholder="Time limit in seconds">
-    </div>
-    <div style="margin-bottom: 24px;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Thumbnail</label>
-      <div style="display: flex; gap: 16px; align-items: flex-start;">
-        <div id="thumbnailPreview" style="
-          width: 160px; 
-          height: 90px; 
-          background: #f5f5f5; 
-          border: 1px solid #ddd; 
-          border-radius: 4px;
-          display: flex; 
-          align-items: center; 
-          justify-content: center;
-          overflow: hidden;
-        ">
-          ${game.thumbnailData ? `<img src="${game.thumbnailData}" style="width:100%; height:100%; object-fit:cover;">` : '<span style="font-size: 12px; color: #777;">No Image</span>'}
-        </div>
-        <button id="setThumbnailBtn" type="button" style="
-          background: #f5f5f5;
-          color: #333;
-          border: 1px solid #ddd;
-          padding: 8px 16px;
-          font-size: 14px;
-          border-radius: 4px;
-          cursor: pointer;
-          font-family: Roboto, sans-serif;
-        ">Set Thumbnail</button>
-      </div>
-    </div>
-    
-    <div style="margin-bottom: 24px; text-align: left; opacity: 0.5;">
-      <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">Clear Condition (Coming Soon)</label>
-      <select disabled style="
-        width: 100%;
-        padding: 10px;
-        border: 1px solid #ddd;
-        border-radius: 4px;
-        font-size: 14px;
-        box-sizing: border-box;
-      ">
-        <option>None</option>
-        <option>Collect all coins</option>
-        <option>Don't touch the ground</option>
-      </select>
-    </div>
-    <div style="display: flex; gap: 8px; justify-content: flex-end;">
-      <button id="cancelPublish" style="
+    <h2 style="margin: 0 0 16px 0; font-size: 32px; color: #51cf66;">Test Complete!</h2>
+    <p style="font-size: 24px; margin: 16px 0; color: #212121;">Time: ${timeString}s</p>
+    <p style="margin: 16px 0; color: #666;">Your level is ready to publish!</p>
+    <div style="display: flex; gap: 12px; justify-content: center;">
+      <button id="backToEditor" style="
         background: #ddd;
         color: #333;
         border: none;
@@ -2163,8 +2134,8 @@ function showPublishDialog(levelId) {
         border-radius: 4px;
         cursor: pointer;
         font-family: Roboto, sans-serif;
-      ">Cancel</button>
-      <button id="confirmPublish" style="
+      ">Back to Editor</button>
+      <button id="publishNow" style="
         background: #51cf66;
         color: white;
         border: none;
@@ -2173,53 +2144,27 @@ function showPublishDialog(levelId) {
         border-radius: 4px;
         cursor: pointer;
         font-family: Roboto, sans-serif;
-      ">Publish</button>
+      ">Publish Now</button>
     </div>
   `;
   
   overlay.appendChild(dialog);
   document.body.appendChild(overlay);
   
-  // Thumbnail button handler
-  document.getElementById('setThumbnailBtn').addEventListener('click', () => {
-    // Save current form state
-    game.publishFormData = {
-      title: document.getElementById('publishTitle').value,
-      description: document.getElementById('publishDescription').value
-    };
-    
-    document.body.removeChild(overlay);
-    
-    startThumbnailMode((dataUrl) => {
-        game.thumbnailData = dataUrl;
-        showPublishDialog(levelId);
-    });
-  });
-
-  document.getElementById('cancelPublish').addEventListener('click', () => {
-    document.body.removeChild(overlay);
-    window.location.href = '/profile';
+  document.getElementById('backToEditor').addEventListener('click', () => {
+    window.location.href = `/editor?id=${levelId}`;
   });
   
-  document.getElementById('confirmPublish').addEventListener('click', async () => {
-    const title = document.getElementById('publishTitle').value.trim();
-    const description = document.getElementById('publishDescription').value.trim();
-    
-    // Client-side validation
-    if (!title) {
-      alert('Please enter a title for your level');
+  document.getElementById('publishNow').addEventListener('click', async () => {
+    // Attempt to publish using stored data from sessionStorage (set by editor)
+    const publishData = sessionStorage.getItem('publishData');
+    if (!publishData) {
+      alert('Missing publish data. Please return to the editor and try again.');
+      window.location.href = `/editor?id=${levelId}`;
       return;
     }
     
-    if (title.length > 255) {
-      alert('Title must be 255 characters or less');
-      return;
-    }
-    
-    if (description.length > 5000) {
-      alert('Description must be 5000 characters or less');
-      return;
-    }
+    const { title, description, thumbnail } = JSON.parse(publishData);
     
     try {
       const response = await fetch(`/api/levels/${levelId}`, {
@@ -2231,13 +2176,16 @@ function showPublishDialog(levelId) {
           title,
           description,
           published: true,
-          thumbnail: game.thumbnailData
+          thumbnail
         })
       });
       
       if (response.ok) {
-        document.body.removeChild(overlay);
+        // Clear stored data
+        sessionStorage.removeItem('publishData');
+        
         // Show success message
+        document.body.removeChild(overlay);
         const successOverlay = document.createElement('div');
         successOverlay.style.cssText = overlay.style.cssText;
         successOverlay.innerHTML = `
@@ -2253,137 +2201,20 @@ function showPublishDialog(levelId) {
               border-radius: 4px;
               cursor: pointer;
               font-family: Roboto, sans-serif;
-            ">Back to Profile</button>
+            ">View Profile</button>
           </div>
         `;
         document.body.appendChild(successOverlay);
       } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to publish level');
+        const error = await response.json();
+        alert(`Failed to publish: ${error.error || 'Unknown error'}`);
       }
     } catch (err) {
       console.error('Error publishing level:', err);
-      alert('Error publishing level');
+      alert('Error publishing level. Please try again.');
     }
   });
-
-  // Restore form data if exists
-  if (game.publishFormData) {
-      document.getElementById('publishTitle').value = game.publishFormData.title;
-      document.getElementById('publishDescription').value = game.publishFormData.description;
-  }
 }
-
-function startThumbnailMode(callback) {
-    game.thumbnailMode = true;
-    game.thumbnailCallback = callback;
-    game.paused = true; // Ensure paused
-    
-    // Create UI overlay
-    const overlay = document.createElement('div');
-    overlay.id = 'thumbnailOverlay';
-    overlay.style.cssText = `
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        display: flex;
-        align-items: center; justify-content: center;
-        pointer-events: none; /* Let clicks pass through if we want mouse drag, but key nav is fine */
-        z-index: 2000;
-    `;
-    
-    // Viewport frame (16:9)
-    const frame = document.createElement('div');
-    frame.id = 'thumbnailFrame';
-    frame.style.cssText = `
-        width: 60%;
-        max-width: 640px;
-        aspect-ratio: 16/9;
-        border: 4px solid #4CAF50;
-        box-shadow: 0 0 0 9999px rgba(0,0,0,0.7);
-        position: relative;
-    `;
-    
-    const instructions = document.createElement('div');
-    instructions.innerHTML = `
-        <div style="background: rgba(0,0,0,0.8); color: white; padding: 16px; border-radius: 4px; text-align: center;">
-            <div style="font-weight: bold; font-size: 18px; margin-bottom: 8px;">Thumbnail Selection</div>
-            <div>Use <b>Arrow Keys</b> or <b>WASD</b> to move camera</div>
-            <div>Press <b>Enter</b> to Capture</div>
-        </div>
-    `;
-    instructions.style.cssText = `
-        position: absolute;
-        bottom: -100px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 100%;
-        display: flex;
-        justify-content: center;
-    `;
-    
-    frame.appendChild(instructions);
-    overlay.appendChild(frame);
-    document.body.appendChild(overlay);
-}
-
-function updateThumbnailCamera() {
-    const speed = 8;
-    
-    if (game.keys.left) game.camera.x -= speed;
-    if (game.keys.right) game.camera.x += speed;
-    if (game.keys.up) game.camera.y -= speed;
-    if (game.keys.down) game.camera.y += speed;
-    
-    // Clamp
-    game.camera.x = Math.max(0, Math.min(game.camera.x, game.levelWidth - game.width));
-    game.camera.y = Math.max(0, Math.min(game.camera.y, game.levelHeight - game.height));
-}
-
-function captureThumbnail() {
-    // Create offscreen canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 180;
-    const ctx = canvas.getContext('2d');
-    
-    // Get dimensions relative to viewport
-    const frame = document.getElementById('thumbnailFrame');
-    if (!frame) return; // Should not happen
-    
-    const frameRect = frame.getBoundingClientRect();
-    const gameRect = game.canvas.getBoundingClientRect();
-    
-    // Calculate mapping from Screen Pixels to Game Canvas Pixels
-    const scaleX = game.canvas.width / gameRect.width;
-    const scaleY = game.canvas.height / gameRect.height;
-    
-    // Source rectangle in Game Canvas Pixels
-    const sourceX = (frameRect.left - gameRect.left) * scaleX;
-    const sourceY = (frameRect.top - gameRect.top) * scaleY;
-    const sourceW = frameRect.width * scaleX;
-    const sourceH = frameRect.height * scaleY;
-    
-    // Capture
-    ctx.imageSmoothingEnabled = false; // Keep pixel art look if we can, though scaling down usually implies smoothing.
-    // Actually for thumbnails, smoothing is better.
-    ctx.imageSmoothingEnabled = true;
-    
-    ctx.drawImage(game.canvas, sourceX, sourceY, sourceW, sourceH, 0, 0, 320, 180);
-    
-    const dataUrl = canvas.toDataURL('image/png', 0.9);
-    
-    // Cleanup
-    document.body.removeChild(document.getElementById('thumbnailOverlay'));
-    game.thumbnailMode = false;
-    
-    if (game.thumbnailCallback) {
-        game.thumbnailCallback(dataUrl);
-        game.thumbnailCallback = null;
-    }
-}
-
-
 
 // --- Pause Menu Handling ---
 
