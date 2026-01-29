@@ -7,7 +7,9 @@
     "start": "node server.js",
     "dev": "node server.js",
     "db:setup": "node scripts/setup-database.js",
-    "db:seed": "node scripts/seed-database.js"
+    "db:seed": "node scripts/seed-database.js",
+    "db:add-rating": "node scripts/add-rating-system.js",
+    "test:rating": "node scripts/test-rating-system.js"
   },
   "keywords": [
     "game",

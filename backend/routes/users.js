@@ -8,9 +8,9 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     
-    // Get user info
+    // Get user info including ratings
     const userResult = await db.query(
-      'SELECT id, username, avatar_url, created_at FROM users WHERE id = $1',
+      'SELECT id, username, avatar_url, created_at, skill_rating, rating_deviation FROM users WHERE id = $1',
       [id]
     );
 
@@ -32,6 +32,10 @@ router.get('/:id', async (req, res) => {
       total_playtime: 0,
       levels_created: 0,
       total_likes_received: 0,
+      seasonal_skill_rating: 1500,
+      seasonal_rating_deviation: 350,
+      blind_mode_skill_rating: 1500,
+      blind_mode_rating_deviation: 350
     };
 
     res.json({
@@ -130,21 +134,47 @@ router.get('/leaderboard/:type', async (req, res) => {
     const validOrderBy = {
       'clears': 'total_clears DESC',
       'records': 'total_records DESC',
-      'playtime': 'total_playtime DESC'
+      'playtime': 'total_playtime DESC',
+      'skill_rating': 'skill_rating DESC',
+      'seasonal_rating': 'seasonal_skill_rating DESC',
+      'blind_mode_rating': 'blind_mode_skill_rating DESC'
     };
 
     const orderBy = validOrderBy[type] || 'total_clears DESC';
 
-    const result = await db.query(
-      `SELECT u.id, u.username, u.avatar_url, 
-              us.total_clears, us.total_records, us.total_playtime, 
-              us.levels_created, us.total_likes_received
-       FROM users u
-       INNER JOIN user_stats us ON u.id = us.user_id
-       ORDER BY ${orderBy}
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
+    let query, queryParams;
+    
+    // For skill rating leaderboards, query users table directly
+    if (type === 'skill_rating' || type === 'seasonal_rating' || type === 'blind_mode_rating') {
+      const ratingColumn = type === 'skill_rating' ? 'u.skill_rating' : 
+                          type === 'seasonal_rating' ? 'us.seasonal_skill_rating' :
+                          'us.blind_mode_skill_rating';
+      const rdColumn = type === 'skill_rating' ? 'u.rating_deviation' :
+                       type === 'seasonal_rating' ? 'us.seasonal_rating_deviation' :
+                       'us.blind_mode_rating_deviation';
+                       
+      query = `SELECT u.id, u.username, u.avatar_url, 
+                      ${ratingColumn} as rating, ${rdColumn} as rating_deviation,
+                      us.total_clears, us.total_records, us.total_playtime, 
+                      us.levels_created, us.total_likes_received
+               FROM users u
+               LEFT JOIN user_stats us ON u.id = us.user_id
+               ORDER BY ${orderBy}
+               LIMIT $1 OFFSET $2`;
+      queryParams = [limit, offset];
+    } else {
+      query = `SELECT u.id, u.username, u.avatar_url, 
+                      u.skill_rating, u.rating_deviation,
+                      us.total_clears, us.total_records, us.total_playtime, 
+                      us.levels_created, us.total_likes_received
+               FROM users u
+               INNER JOIN user_stats us ON u.id = us.user_id
+               ORDER BY ${orderBy}
+               LIMIT $1 OFFSET $2`;
+      queryParams = [limit, offset];
+    }
+
+    const result = await db.query(query, queryParams);
 
     const countResult = await db.query('SELECT COUNT(*) FROM users');
     const totalCount = parseInt(countResult.rows[0].count);

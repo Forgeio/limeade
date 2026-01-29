@@ -103,6 +103,12 @@ function displayLevel(level) {
   // Update like/dislike counts
   document.getElementById('likeCount').textContent = level.total_likes || 0;
   document.getElementById('dislikeCount').textContent = level.total_dislikes || 0;
+  
+  // Display difficulty rating info
+  displayDifficultyInfo(level);
+  
+  // Load level records
+  loadLevelRecords();
 }
 
 // Update rating buttons based on user status
@@ -192,6 +198,155 @@ function goBack() {
   } else {
     window.location.href = 'discover.html';
   }
+}
+
+// Display difficulty rating information
+function displayDifficultyInfo(level) {
+  const statsRow = document.querySelector('.level-stats-row');
+  
+  // Remove any existing difficulty stats to prevent duplication
+  const existingDifficultyStats = statsRow.querySelectorAll('.level-stat.difficulty-stat');
+  existingDifficultyStats.forEach(stat => stat.remove());
+  
+  if (level.difficulty_label) {
+    const dl = level.difficulty_label;
+    
+    // Add difficulty stat
+    const difficultyHTML = `
+      <div class="level-stat difficulty-stat">
+        <span class="level-stat-value">
+          <span class="rating-badge" style="background: ${dl.color};">
+            ${dl.label}
+          </span>
+        </span>
+        <span class="level-stat-label">Difficulty ${dl.uncertaintyBadge ? `(${dl.uncertaintyBadge})` : ''}</span>
+      </div>
+    `;
+    
+    statsRow.insertAdjacentHTML('beforeend', difficultyHTML);
+    
+    // Only show difficulty rating number if the level is rated (RD <= 150)
+    if (dl.showRating) {
+      const drHTML = `
+        <div class="level-stat difficulty-stat">
+          <span class="level-stat-value">${level.difficulty_rating || 1500}</span>
+          <span class="level-stat-label">Difficulty Rating</span>
+        </div>
+      `;
+      
+      statsRow.insertAdjacentHTML('beforeend', drHTML);
+    }
+  }
+  
+  // Add volatile indicator if needed
+  if (level.is_volatile) {
+    const volatileHTML = `
+      <div class="level-stat difficulty-stat">
+        <span class="level-stat-value" style="color: #ff9800;">⚠️ Volatile</span>
+        <span class="level-stat-label">Unpredictable</span>
+      </div>
+    `;
+    
+    statsRow.insertAdjacentHTML('beforeend', volatileHTML);
+  }
+}
+
+// Load level records (leaderboards)
+async function loadLevelRecords() {
+  const container = document.querySelector('.comments-section');
+  
+  if (!container) return;
+  
+  try {
+    // Fetch different record types
+    const [fastestResponse, highestResponse, lowestResponse] = await Promise.all([
+      fetch(`/api/levels/${currentLevelId}/records/fastest_clear?limit=5`),
+      fetch(`/api/levels/${currentLevelId}/records/highest_rated_clear?limit=5`),
+      fetch(`/api/levels/${currentLevelId}/records/lowest_rated_clear?limit=5`)
+    ]);
+    
+    const fastest = fastestResponse.ok ? await fastestResponse.json() : { records: [] };
+    const highest = highestResponse.ok ? await highestResponse.json() : { records: [] };
+    const lowest = lowestResponse.ok ? await lowestResponse.json() : { records: [] };
+    
+    // Build records HTML
+    let recordsHTML = '<div class="records-section">';
+    
+    // Fastest clears
+    if (fastest.records && fastest.records.length > 0) {
+      recordsHTML += `
+        <div class="records-header">⚡ Fastest Clears</div>
+        <div class="records-list">
+          ${fastest.records.map((record, idx) => createRecordItem(record, idx + 1, 'time')).join('')}
+        </div>
+      `;
+    }
+    
+    // Highest rated clears
+    if (highest.records && highest.records.length > 0) {
+      recordsHTML += `
+        <div class="records-header" style="margin-top: 24px;">🏆 Highest Rated Clears</div>
+        <div class="records-list">
+          ${highest.records.map((record, idx) => createRecordItem(record, idx + 1, 'rating')).join('')}
+        </div>
+      `;
+    }
+    
+    // Lowest rated clears (impressive!)
+    if (lowest.records && lowest.records.length > 0) {
+      recordsHTML += `
+        <div class="records-header" style="margin-top: 24px;">💪 Lowest Rated Clears (Most Impressive)</div>
+        <div class="records-list">
+          ${lowest.records.map((record, idx) => createRecordItem(record, idx + 1, 'rating')).join('')}
+        </div>
+      `;
+    }
+    
+    recordsHTML += '</div>';
+    
+    // Insert before comments section
+    container.insertAdjacentHTML('beforebegin', recordsHTML);
+  } catch (err) {
+    console.error('Error loading level records:', err);
+  }
+}
+
+// Create record item HTML
+function createRecordItem(record, rank, type) {
+  const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
+  
+  let statHTML = '';
+  if (type === 'time' && record.completion_time) {
+    const minutes = Math.floor(record.completion_time / 60);
+    const seconds = record.completion_time % 60;
+    statHTML = `
+      <div class="record-stat">
+        <svg class="icon"><use href="icons.svg#icon-timer"/></svg>
+        <span>${minutes}:${String(seconds).padStart(2, '0')}</span>
+      </div>
+    `;
+  }
+  
+  if (record.skill_rating) {
+    statHTML += `
+      <div class="record-stat">
+        <svg class="icon"><use href="icons.svg#icon-star"/></svg>
+        <span>SR: ${record.skill_rating}</span>
+      </div>
+    `;
+  }
+  
+  return `
+    <div class="record-item">
+      <div class="record-player">
+        <span class="record-rank ${rankClass}">${rank}.</span>
+        <span>${escapeHtml(record.username)}</span>
+      </div>
+      <div class="record-stats">
+        ${statHTML}
+      </div>
+    </div>
+  `;
 }
 
 // Helper function to escape HTML

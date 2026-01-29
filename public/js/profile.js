@@ -143,6 +143,15 @@ function updateProfileDisplay(user) {
             statPlaytime.textContent = `${hours}h`;
         }
     }
+    
+    // Update skill rating if available
+    if (user.skill_rating !== undefined) {
+        const statSkillRating = document.getElementById('statSkillRating');
+        if (statSkillRating) {
+            const rd = user.rating_deviation || 350;
+            statSkillRating.innerHTML = `${user.skill_rating} <span style="font-size: 14px; color: var(--text-secondary);">±${rd}</span>`;
+        }
+    }
 }
 
 function switchProfileTab(tab) {

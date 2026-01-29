@@ -102,10 +102,33 @@ function createLevelCard(level) {
   const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}'); background-size: cover; background-position: center;` : '';
   const iconStyle = thumbUrl ? 'display: none;' : 'width: 48px; height: 48px;';
 
+  // Difficulty badge
+  let difficultyBadge = '';
+  if (level.difficulty_label) {
+    const dl = level.difficulty_label;
+    
+    // For "New" levels, don't show uncertainty indicator since the whole badge is "New"
+    const uncertaintyIndicator = (dl.isUncertain && !dl.isNew) ? 
+      `<span class="uncertainty-indicator" title="${dl.uncertaintyBadge}">?</span>` : '';
+    
+    difficultyBadge = `
+      <div class="difficulty-badge" style="background: ${dl.color};" title="${dl.description}">
+        ${dl.label}
+        ${uncertaintyIndicator}
+      </div>
+    `;
+  }
+
+  // Volatility indicator
+  const volatileBadge = level.is_volatile ? 
+    '<div class="volatile-badge" title="Volatile / Unpredictable difficulty">⚠️</div>' : '';
+
   return `
     <div class="level-card" data-level-id="${escapedId}">
       <div class="level-card-image" style="${thumbStyle}">
         <svg class="icon" style="${iconStyle}"><use href="icons.svg#icon-videogame"/></svg>
+        ${difficultyBadge}
+        ${volatileBadge}
       </div>
       <div class="level-card-content">
         <h3 class="level-card-title">${escapedTitle}</h3>

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rating System Bug Fixes - Preview</title>
+  <style>
+    :root {
+      --primary-color: #4CAF50;
+      --card-color: #ffffff;
+      --text-primary: #212121;
+      --text-secondary: #757575;
+      --shadow-sm: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    body {
+      font-family: 'Roboto', 'Segoe UI', sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    h1, h2 {
+      color: var(--text-primary);
+    }
+    
+    .section {
+      background: var(--card-color);
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow-sm);
+    }
+    
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin: 24px 0;
+    }
+    
+    .column {
+      padding: 16px;
+      border-radius: 8px;
+    }
+    
+    .before {
+      background: #ffebee;
+      border: 2px solid #ef5350;
+    }
+    
+    .after {
+      background: #e8f5e9;
+      border: 2px solid #66bb6a;
+    }
+    
+    .level-card {
+      background: var(--card-color);
+      border-radius: 8px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+      margin: 16px 0;
+      max-width: 300px;
+    }
+    
+    .level-card-image {
+      width: 100%;
+      height: 180px;
+      background: linear-gradient(135deg, #424242 0%, #212121 100%);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 48px;
+    }
+    
+    .difficulty-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      padding: 4px 12px;
+      border-radius: 4px;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .uncertainty-indicator {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    
+    .level-card-content {
+      padding: 16px;
+    }
+    
+    .level-card-title {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    
+    .stats-display {
+      background: #f5f5f5;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 16px 0;
+    }
+    
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    .stat-item:last-child {
+      border-bottom: none;
+    }
+    
+    .badge-demo {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 4px;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin: 4px;
+    }
+    
+    .code-block {
+      background: #263238;
+      color: #aed581;
+      padding: 16px;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 14px;
+      overflow-x: auto;
+      margin: 16px 0;
+    }
+    
+    .highlight {
+      background: #fff3cd;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 600;
+    }
+    
+    .check {
+      color: #4caf50;
+      font-weight: bold;
+    }
+    
+    .cross {
+      color: #f44336;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🐛 Rating System Bug Fixes</h1>
+    
+    <div class="section">
+      <h2>Issues Fixed</h2>
+      <ul style="font-size: 16px; line-height: 2;">
+        <li><span class="check">✓</span> New levels now show <span class="highlight">"New"</span> label instead of calculated difficulty</li>
+        <li><span class="check">✓</span> Unrated levels show <span class="highlight">"Unrated"</span> instead of difficulty</li>
+        <li><span class="check">✓</span> Difficulty rating number only shown when level is rated</li>
+        <li><span class="check">✓</span> Fixed duplication bug when liking/disliking</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <h2>1️⃣ New Level Labels</h2>
+      <p>Levels with high uncertainty (RD > 200) now show "New" instead of a premature difficulty rating.</p>
+      
+      <div class="comparison">
+        <div class="column before">
+          <h3><span class="cross">✗</span> Before</h3>
+          <div class="level-card">
+            <div class="level-card-image">
+              🎮
+              <div class="difficulty-badge" style="background: #ff9800;">
+                Medium <span class="uncertainty-indicator">?</span>
+              </div>
+            </div>
+            <div class="level-card-content">
+              <div class="level-card-title">Brand New Level</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">Just published, 0 plays</p>
+            </div>
+          </div>
+          <p style="color: #d32f2f; font-weight: 500;">❌ Problem: Shows "Medium" even though nobody has played it yet!</p>
+        </div>
+        
+        <div class="column after">
+          <h3><span class="check">✓</span> After</h3>
+          <div class="level-card">
+            <div class="level-card-image">
+              🎮
+              <div class="difficulty-badge" style="background: #9e9e9e;">
+                New
+              </div>
+            </div>
+            <div class="level-card-content">
+              <div class="level-card-title">Brand New Level</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">Just published, 0 plays</p>
+            </div>
+          </div>
+          <p style="color: #388e3c; font-weight: 500;">✅ Fixed: Shows "New" until enough data is collected</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>2️⃣ Unrated Levels</h2>
+      <p>Levels that are stabilizing (150 < RD ≤ 200) show "Unrated" with optional uncertainty indicator.</p>
+      
+      <div class="comparison">
+        <div class="column before">
+          <h3><span class="cross">✗</span> Before</h3>
+          <div class="level-card">
+            <div class="level-card-image">
+              🎯
+              <div class="difficulty-badge" style="background: #4caf50;">
+                Easy <span class="uncertainty-indicator">?</span>
+              </div>
+            </div>
+            <div class="level-card-content">
+              <div class="level-card-title">Stabilizing Level</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">10 plays, rating uncertain</p>
+            </div>
+          </div>
+          <p style="color: #d32f2f; font-weight: 500;">❌ Problem: Misleading difficulty with uncertainty indicator</p>
+        </div>
+        
+        <div class="column after">
+          <h3><span class="check">✓</span> After</h3>
+          <div class="level-card">
+            <div class="level-card-image">
+              🎯
+              <div class="difficulty-badge" style="background: #757575;">
+                Unrated <span class="uncertainty-indicator">?</span>
+              </div>
+            </div>
+            <div class="level-card-content">
+              <div class="level-card-title">Stabilizing Level</div>
+              <p style="font-size: 14px; color: var(--text-secondary);">10 plays, rating uncertain</p>
+            </div>
+          </div>
+          <p style="color: #388e3c; font-weight: 500;">✅ Fixed: Shows "Unrated" while rating stabilizes</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>3️⃣ Difficulty Rating Number Display</h2>
+      <p>The difficulty rating number (DR) is now only shown when the level is rated (RD ≤ 150).</p>
+      
+      <div class="comparison">
+        <div class="column before">
+          <h3><span class="cross">✗</span> Before</h3>
+          <div class="stats-display">
+            <div class="stat-item">
+              <span>Difficulty:</span>
+              <span><span class="badge-demo" style="background: #9e9e9e;">New</span></span>
+            </div>
+            <div class="stat-item">
+              <span>Difficulty Rating:</span>
+              <span><strong>1500</strong></span>
+            </div>
+          </div>
+          <p style="color: #d32f2f; font-weight: 500;">❌ Problem: Shows DR number even for new levels</p>
+        </div>
+        
+        <div class="column after">
+          <h3><span class="check">✓</span> After</h3>
+          <div class="stats-display">
+            <div class="stat-item">
+              <span>Difficulty:</span>
+              <span><span class="badge-demo" style="background: #9e9e9e;">New</span></span>
+            </div>
+            <div class="stat-item" style="opacity: 0.3;">
+              <span>Difficulty Rating:</span>
+              <span><em>(hidden until rated)</em></span>
+            </div>
+          </div>
+          <p style="color: #388e3c; font-weight: 500;">✅ Fixed: DR number only shown when RD ≤ 150</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>4️⃣ Duplication Bug Fix</h2>
+      <p>Fixed bug where liking/disliking a level caused duplicate difficulty stats to appear.</p>
+      
+      <div class="comparison">
+        <div class="column before">
+          <h3><span class="cross">✗</span> Before</h3>
+          <div class="code-block">
+// When user likes/disliked, loadLevel() is called<br>
+// which calls displayDifficultyInfo() again<br>
+<br>
+<span style="color: #ef5350;">// Stats get appended, causing duplicates!</span><br>
+statsRow.insertAdjacentHTML('beforeend', difficultyHTML);
+          </div>
+          <div class="stats-display">
+            <div class="stat-item">
+              <span>Difficulty:</span>
+              <span><span class="badge-demo" style="background: #ff9800;">Medium</span></span>
+            </div>
+            <div class="stat-item">
+              <span>Difficulty Rating:</span>
+              <span><strong>1600</strong></span>
+            </div>
+            <div class="stat-item" style="color: #f44336;">
+              <span>Difficulty: (DUPLICATE!)</span>
+              <span><span class="badge-demo" style="background: #ff9800;">Medium</span></span>
+            </div>
+            <div class="stat-item" style="color: #f44336;">
+              <span>Difficulty Rating: (DUPLICATE!)</span>
+              <span><strong>1600</strong></span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="column after">
+          <h3><span class="check">✓</span> After</h3>
+          <div class="code-block">
+// Clear existing difficulty stats first<br>
+<span style="color: #66bb6a;">const existingStats = statsRow.querySelectorAll('.difficulty-stat');</span><br>
+<span style="color: #66bb6a;">existingStats.forEach(stat => stat.remove());</span><br>
+<br>
+// Then add new ones<br>
+statsRow.insertAdjacentHTML('beforeend', difficultyHTML);
+          </div>
+          <div class="stats-display">
+            <div class="stat-item">
+              <span>Difficulty:</span>
+              <span><span class="badge-demo" style="background: #ff9800;">Medium</span></span>
+            </div>
+            <div class="stat-item">
+              <span>Difficulty Rating:</span>
+              <span><strong>1600</strong></span>
+            </div>
+          </div>
+          <p style="color: #388e3c; font-weight: 500;">✅ Fixed: No duplicates!</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>📊 Label Decision Tree</h2>
+      <div class="code-block" style="background: white; color: #212121; border: 2px solid #e0e0e0;">
+<pre style="margin: 0;">
+Level RD > 200?
+  ├─ YES → Show <span class="badge-demo" style="background: #9e9e9e;">New</span> label (no DR number)
+  │
+  └─ NO → RD > 150?
+       ├─ YES → Show <span class="badge-demo" style="background: #757575;">Unrated</span> label (no DR number)
+       │
+       └─ NO → RD ≤ 150 (Rated!)
+            ├─ Show actual difficulty label based on DR vs SR
+            ├─ Show DR number
+            └─ Labels: Easy / Normal / Medium / Hard / Extreme
+</pre>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>🎨 All Difficulty Badges</h2>
+      <p>Complete set of difficulty labels with their conditions:</p>
+      
+      <div style="margin: 24px 0;">
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #9e9e9e;">New</span>
+          <span style="margin-left: 16px;">RD > 200 (new level, no rating yet)</span>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #757575;">Unrated</span>
+          <span class="uncertainty-indicator" style="margin-left: 4px;">?</span>
+          <span style="margin-left: 16px;">150 < RD ≤ 200 (rating stabilizing)</span>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #4caf50;">Easy</span>
+          <span style="margin-left: 16px;">RD ≤ 150 and DR < SR - 300</span>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #2196f3;">Normal</span>
+          <span style="margin-left: 16px;">RD ≤ 150 and DR < SR - 100</span>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #ff9800;">Medium</span>
+          <span style="margin-left: 16px;">RD ≤ 150 and DR < SR + 200</span>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #f44336;">Hard</span>
+          <span style="margin-left: 16px;">RD ≤ 150 and DR < SR + 500</span>
+        </div>
+        
+        <div style="margin: 12px 0;">
+          <span class="badge-demo" style="background: #9c27b0;">Extreme</span>
+          <span style="margin-left: 16px;">RD ≤ 150 and DR ≥ SR + 500</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="section" style="background: #e8f5e9;">
+      <h2>✅ Summary</h2>
+      <p style="font-size: 16px;">All issues have been fixed:</p>
+      <ul style="font-size: 16px; line-height: 2;">
+        <li><strong>New levels</strong> show "New" badge (gray) instead of premature difficulty</li>
+        <li><strong>Unrated levels</strong> show "Unrated" badge (dark gray) while stabilizing</li>
+        <li><strong>Difficulty rating number</strong> only displayed for rated levels (RD ≤ 150)</li>
+        <li><strong>Duplication bug</strong> fixed by clearing existing stats before adding new ones</li>
+        <li><strong>Tests updated</strong> to verify all new behavior</li>
+        <li><strong>Documentation updated</strong> to reflect changes</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>
