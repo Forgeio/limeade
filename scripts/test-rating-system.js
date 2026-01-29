@@ -91,16 +91,18 @@ console.log('Test 5: Difficulty Labels');
 console.log('--------------------------');
 
 const labels = [
-  { levelDR: 1000, playerSR: 1500, desc: 'Easy level' },
-  { levelDR: 1400, playerSR: 1500, desc: 'Normal level' },
-  { levelDR: 1600, playerSR: 1500, desc: 'Medium level' },
-  { levelDR: 1800, playerSR: 1500, desc: 'Hard level' },
-  { levelDR: 2100, playerSR: 1500, desc: 'Extreme level' },
+  { levelDR: 1500, playerSR: 1500, levelRD: 350, desc: 'New level (high RD)' },
+  { levelDR: 1500, playerSR: 1500, levelRD: 180, desc: 'Unrated level (moderate RD)' },
+  { levelDR: 1000, playerSR: 1500, levelRD: 50, desc: 'Easy level (low RD)' },
+  { levelDR: 1400, playerSR: 1500, levelRD: 50, desc: 'Normal level' },
+  { levelDR: 1600, playerSR: 1500, levelRD: 50, desc: 'Medium level' },
+  { levelDR: 1800, playerSR: 1500, levelRD: 50, desc: 'Hard level' },
+  { levelDR: 2100, playerSR: 1500, levelRD: 50, desc: 'Extreme level' },
 ];
 
-labels.forEach(({ levelDR, playerSR, desc }) => {
-  const label = ratingSystem.getDifficultyLabel(levelDR, playerSR);
-  console.log(`${desc}: DR=${levelDR}, SR=${playerSR} → ${label.label} (${label.description})`);
+labels.forEach(({ levelDR, playerSR, levelRD, desc }) => {
+  const label = ratingSystem.getDifficultyLabel(levelDR, playerSR, levelRD);
+  console.log(`${desc}: DR=${levelDR}, SR=${playerSR}, RD=${levelRD} → ${label.label} (showRating: ${label.showRating})`);
 });
 
 console.log('\n');

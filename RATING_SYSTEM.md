@@ -143,15 +143,20 @@ Levels are labeled relative to the player's skill:
 
 | Label | Condition | Color | Description |
 |-------|-----------|-------|-------------|
-| Easy | DR < SR - 300 | Green | Well within your skill level |
-| Normal | DR < SR - 100 | Blue | Should be manageable |
-| Medium | DR < SR + 200 | Orange | A fair challenge |
-| Hard | DR < SR + 500 | Red | Significantly challenging |
-| Extreme | DR ≥ SR + 500 | Purple | Extremely difficult |
+| New | RD > 200 | Gray | New level - difficulty not yet determined |
+| Unrated | RD > 150 | Dark Gray | Rating still stabilizing |
+| Easy | DR < SR - 300 (and RD ≤ 150) | Green | Well within your skill level |
+| Normal | DR < SR - 100 (and RD ≤ 150) | Blue | Should be manageable |
+| Medium | DR < SR + 200 (and RD ≤ 150) | Orange | A fair challenge |
+| Hard | DR < SR + 500 (and RD ≤ 150) | Red | Significantly challenging |
+| Extreme | DR ≥ SR + 500 (and RD ≤ 150) | Purple | Extremely difficult |
 
 Additional badges:
-- **Uncertain** (?) - Shown when RD > 150 (new/stabilizing level)
+- **New Level** - Shown when RD > 200 (brand new level)
+- **Stabilizing** (?) - Shown when 150 < RD ≤ 200 (unrated level)
 - **Volatile** (⚠️) - Shown for levels flagged as unpredictable
+
+**Note:** The difficulty rating number (DR) is only displayed once a level is rated (RD ≤ 150). New and Unrated levels do not show a specific difficulty number.
 
 ## Volatility Detection
 

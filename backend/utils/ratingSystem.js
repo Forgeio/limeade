@@ -166,10 +166,49 @@ function detectVolatility(recentOutcomes, recentExpected) {
 function getDifficultyLabel(levelDR, playerSR, levelRD = 50) {
   const difference = levelDR - playerSR;
   
-  // Add uncertainty badge if RD is high
-  const isUncertain = levelRD > 150;
+  let label, color, description, isUncertain, uncertaintyBadge;
   
-  let label, color, description;
+  // New levels (very high uncertainty) - show as "New"
+  if (levelRD > 200) {
+    label = 'New';
+    color = '#9e9e9e';
+    description = 'New level - difficulty not yet determined';
+    isUncertain = true;
+    uncertaintyBadge = 'New Level';
+    
+    return {
+      label,
+      color,
+      description,
+      isUncertain,
+      uncertaintyBadge,
+      isNew: true,
+      showRating: false
+    };
+  }
+  
+  // Unrated levels (high uncertainty) - show as "Unrated"
+  if (levelRD > 150) {
+    label = 'Unrated';
+    color = '#757575';
+    description = 'Rating still stabilizing';
+    isUncertain = true;
+    uncertaintyBadge = 'Stabilizing';
+    
+    return {
+      label,
+      color,
+      description,
+      isUncertain,
+      uncertaintyBadge,
+      isNew: false,
+      showRating: false
+    };
+  }
+  
+  // Rated levels - show actual difficulty
+  isUncertain = false;
+  uncertaintyBadge = null;
   
   if (difference < -300) {
     label = 'Easy';
@@ -198,7 +237,9 @@ function getDifficultyLabel(levelDR, playerSR, levelRD = 50) {
     color,
     description,
     isUncertain,
-    uncertaintyBadge: isUncertain ? 'New / Stabilizing' : null
+    uncertaintyBadge,
+    isNew: false,
+    showRating: true
   };
 }
 

@@ -204,38 +204,44 @@ function goBack() {
 function displayDifficultyInfo(level) {
   const statsRow = document.querySelector('.level-stats-row');
   
+  // Remove any existing difficulty stats to prevent duplication
+  const existingDifficultyStats = statsRow.querySelectorAll('.level-stat.difficulty-stat');
+  existingDifficultyStats.forEach(stat => stat.remove());
+  
   if (level.difficulty_label) {
     const dl = level.difficulty_label;
     
     // Add difficulty stat
     const difficultyHTML = `
-      <div class="level-stat">
+      <div class="level-stat difficulty-stat">
         <span class="level-stat-value">
           <span class="rating-badge" style="background: ${dl.color};">
             ${dl.label}
           </span>
         </span>
-        <span class="level-stat-label">Difficulty ${dl.isUncertain ? '(Stabilizing)' : ''}</span>
+        <span class="level-stat-label">Difficulty ${dl.uncertaintyBadge ? `(${dl.uncertaintyBadge})` : ''}</span>
       </div>
     `;
     
     statsRow.insertAdjacentHTML('beforeend', difficultyHTML);
     
-    // Add difficulty rating number
-    const drHTML = `
-      <div class="level-stat">
-        <span class="level-stat-value">${level.difficulty_rating || 1500}</span>
-        <span class="level-stat-label">Difficulty Rating</span>
-      </div>
-    `;
-    
-    statsRow.insertAdjacentHTML('beforeend', drHTML);
+    // Only show difficulty rating number if the level is rated (RD <= 150)
+    if (dl.showRating) {
+      const drHTML = `
+        <div class="level-stat difficulty-stat">
+          <span class="level-stat-value">${level.difficulty_rating || 1500}</span>
+          <span class="level-stat-label">Difficulty Rating</span>
+        </div>
+      `;
+      
+      statsRow.insertAdjacentHTML('beforeend', drHTML);
+    }
   }
   
   // Add volatile indicator if needed
   if (level.is_volatile) {
     const volatileHTML = `
-      <div class="level-stat">
+      <div class="level-stat difficulty-stat">
         <span class="level-stat-value" style="color: #ff9800;">⚠️ Volatile</span>
         <span class="level-stat-label">Unpredictable</span>
       </div>

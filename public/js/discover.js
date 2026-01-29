@@ -106,10 +106,15 @@ function createLevelCard(level) {
   let difficultyBadge = '';
   if (level.difficulty_label) {
     const dl = level.difficulty_label;
+    
+    // For "New" levels, don't show uncertainty indicator since the whole badge is "New"
+    const uncertaintyIndicator = (dl.isUncertain && !dl.isNew) ? 
+      `<span class="uncertainty-indicator" title="${dl.uncertaintyBadge}">?</span>` : '';
+    
     difficultyBadge = `
       <div class="difficulty-badge" style="background: ${dl.color};" title="${dl.description}">
         ${dl.label}
-        ${dl.isUncertain ? '<span class="uncertainty-indicator" title="New / Stabilizing">?</span>' : ''}
+        ${uncertaintyIndicator}
       </div>
     `;
   }
