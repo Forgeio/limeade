@@ -453,6 +453,160 @@ body {
   justify-content: center;
   color: white;
   font-size: 48px;
+  position: relative;
+}
+
+.difficulty-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.difficulty-badge .uncertainty-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: bold;
+}
+
+.volatile-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 152, 0, 0.9);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  z-index: 2;
+}
+
+.rating-info {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.rating-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.rating-row:last-child {
+  margin-bottom: 0;
+}
+
+.rating-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  min-width: 120px;
+}
+
+.rating-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.rating-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  text-transform: uppercase;
+}
+
+.records-section {
+  margin-top: 24px;
+  padding: 20px;
+  background: var(--card-color);
+  border-radius: 8px;
+  box-shadow: var(--shadow-sm);
+}
+
+.records-header {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.records-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.record-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.02);
+  border-radius: 4px;
+}
+
+.record-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.record-rank {
+  font-weight: 700;
+  color: var(--text-secondary);
+  min-width: 24px;
+}
+
+.record-rank.gold {
+  color: #ffd700;
+}
+
+.record-rank.silver {
+  color: #c0c0c0;
+}
+
+.record-rank.bronze {
+  color: #cd7f32;
+}
+
+.record-stats {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.record-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .level-card-content {
@@ -680,6 +834,14 @@ body {
 .player-name {
   font-size: 17px;
   font-weight: 500;
+  min-width: 120px;
+}
+
+.player-main-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
   min-width: 120px;
 }
 

@@ -1,6 +1,6 @@
 // Leaderboards page functionality
 
-let currentTab = 'global-clears';
+let currentTab = 'skill-rating';
 let currentPage = 1;
 const itemsPerPage = 15;
 
@@ -29,15 +29,16 @@ async function loadPlayers() {
   
   try {
     // Determine leaderboard type
-    let leaderboardType = 'clears';
-    if (currentTab.includes('records')) {
+    let leaderboardType = 'skill_rating';
+    if (currentTab === 'global-clears') {
+      leaderboardType = 'clears';
+    } else if (currentTab === 'global-records') {
       leaderboardType = 'records';
-    } else if (currentTab.includes('playtime')) {
-      leaderboardType = 'playtime';
+    } else if (currentTab === 'seasonal-rating') {
+      leaderboardType = 'seasonal_rating';
+    } else if (currentTab === 'blind-mode') {
+      leaderboardType = 'blind_mode_rating';
     }
-    
-    // For friend leaderboards, we'll use the same API for now
-    // TODO: Implement friend filtering when friend system is added
     
     // Fetch players from API
     const response = await fetch(`/api/users/leaderboard/${leaderboardType}?page=${currentPage}&limit=${itemsPerPage}`);
@@ -67,7 +68,7 @@ async function loadPlayers() {
       rank: (currentPage - 1) * itemsPerPage + index + 1
     }));
     
-    container.innerHTML = rankedPlayers.map(player => createPlayerCard(player)).join('');
+    container.innerHTML = rankedPlayers.map(player => createPlayerCard(player, leaderboardType)).join('');
     
     updatePagination(data.pagination.totalCount);
   } catch (err) {
@@ -83,7 +84,7 @@ async function loadPlayers() {
 }
 
 // Create player card HTML
-function createPlayerCard(player) {
+function createPlayerCard(player, leaderboardType) {
   const rankClass = player.rank === 1 ? 'gold' : player.rank === 2 ? 'silver' : player.rank === 3 ? 'bronze' : '';
   const rankIcon = player.rank <= 3 ? 
     `<svg class="icon" style="width: 24px; height: 24px;"><use href="icons.svg#icon-trophy"/></svg>` : 
@@ -97,6 +98,24 @@ function createPlayerCard(player) {
     .substring(0, 2);
   
   const escapedName = escapeHtml(player.username);
+  
+  // Determine main stat based on leaderboard type
+  let mainStat = '';
+  let mainStatLabel = '';
+  
+  if (leaderboardType === 'skill_rating' || leaderboardType === 'seasonal_rating' || leaderboardType === 'blind_mode_rating') {
+    const rating = player.rating || player.skill_rating || 1500;
+    const rd = player.rating_deviation || 350;
+    mainStat = `${rating} <span style="font-size: 14px; color: var(--text-secondary);">±${rd}</span>`;
+    mainStatLabel = leaderboardType === 'seasonal_rating' ? 'Seasonal SR' : 
+                    leaderboardType === 'blind_mode_rating' ? 'Blind SR' : 'Skill Rating';
+  } else if (leaderboardType === 'clears') {
+    mainStat = player.total_clears || 0;
+    mainStatLabel = 'Total Clears';
+  } else if (leaderboardType === 'records') {
+    mainStat = player.total_records || 0;
+    mainStatLabel = 'World Records';
+  }
   
   // Format playtime (convert seconds to hours)
   const playtimeHours = Math.floor((player.total_playtime || 0) / 3600);
@@ -112,6 +131,10 @@ function createPlayerCard(player) {
       </div>
       <div class="player-info">
         <div class="player-name">${escapedName}</div>
+        <div class="player-main-stat">
+          <span style="font-size: 24px; font-weight: 700; color: var(--primary-color);">${mainStat}</span>
+          <span style="font-size: 12px; color: var(--text-secondary);">${mainStatLabel}</span>
+        </div>
         <div class="player-stats">
           <div class="player-stat">
             <svg class="icon"><use href="icons.svg#icon-check-circle"/></svg>
