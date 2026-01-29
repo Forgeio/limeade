@@ -150,7 +150,7 @@ function detectVolatility(recentOutcomes, recentExpected) {
   const avgExpected = recentExpected.reduce((a, b) => a + b, 0) / recentExpected.length;
   const avgOutcome = recentOutcomes.reduce((a, b) => a + b, 0) / recentOutcomes.length;
   
-  const isHighVariance = variance > 0.15;
+  const isHighVariance = variance > 0.10;  // Lowered threshold from 0.15
   const isUnexpectedlyHard = avgExpected > 0.6 && avgOutcome < 0.3;
   
   return isHighVariance || isUnexpectedlyHard;
