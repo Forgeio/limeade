@@ -476,11 +476,43 @@ router.post('/:id/play', async (req, res) => {
     const { id } = req.params;
     const { completed, completion_time } = req.body;
 
-    // Record the play
+    // Fetch creator to block creator records and validate level exists
+    const levelMeta = await db.query('SELECT creator_id FROM levels WHERE id = $1', [id]);
+    if (levelMeta.rows.length === 0) {
+      return res.status(404).json({ error: 'Level not found' });
+    }
+    const isCreator = levelMeta.rows[0].creator_id === req.user.id;
+
+    // Ensure level_stats row exists (older levels may be missing it)
+    await db.query(
+      `INSERT INTO level_stats (level_id, total_plays, total_clears, total_likes, total_dislikes, clear_rate)
+       VALUES ($1, 0, 0, 0, 0, 0.00)
+       ON CONFLICT (level_id) DO NOTHING`,
+      [id]
+    );
+
+    // Record unique play/clear per user (keeps best clear time if already cleared)
+    const prior = await db.query(
+      'SELECT completed FROM level_plays WHERE level_id = $1 AND user_id = $2',
+      [id, req.user.id]
+    );
+    const hadClearedBefore = prior.rows[0]?.completed === true;
+
     await db.query(
       `INSERT INTO level_plays (level_id, user_id, completed, completion_time, has_beaten)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, req.user.id, completed || false, completion_time || null, completed || false]
+       VALUES ($1, $2, $3, $4, $3)
+       ON CONFLICT (level_id, user_id)
+       DO UPDATE SET
+         completed = level_plays.completed OR EXCLUDED.completed,
+         has_beaten = level_plays.completed OR EXCLUDED.completed,
+         completion_time = CASE
+           WHEN (level_plays.completed OR EXCLUDED.completed) THEN LEAST(
+             COALESCE(level_plays.completion_time, EXCLUDED.completion_time),
+             COALESCE(EXCLUDED.completion_time, level_plays.completion_time)
+           )
+           ELSE NULL
+         END;`,
+      [id, req.user.id, completed || false, completion_time || null]
     );
 
     // Update level stats
@@ -495,7 +527,7 @@ router.post('/:id/play', async (req, res) => {
     );
 
     // Update world record if applicable
-    if (completed && completion_time) {
+    if (!isCreator && completed && completion_time) {
       const recordResult = await db.query(
         'SELECT world_record_time FROM level_stats WHERE level_id = $1',
         [id]
@@ -510,10 +542,19 @@ router.post('/:id/play', async (req, res) => {
           );
         }
       }
+
+      // Track fastest clear leaderboard entry (keep best time on conflict)
+      await db.query(
+        `INSERT INTO level_records (level_id, user_id, record_type, skill_rating, completion_time)
+         VALUES ($1, $2, 'fastest_clear', NULL, $3)
+         ON CONFLICT (level_id, user_id, record_type)
+         DO UPDATE SET completion_time = LEAST(level_records.completion_time, $3), recorded_at = NOW()`,
+        [id, req.user.id, completion_time]
+      );
     }
     
     // Update user stats if level was cleared
-    if (completed) {
+    if (completed && !hadClearedBefore) {
       await db.query(
         `INSERT INTO user_stats (user_id, total_clears)
          VALUES ($1, 1)
@@ -667,7 +708,7 @@ router.post('/:id/session/:sessionId/end', async (req, res) => {
     );
 
     const levelResult = await db.query(
-      'SELECT difficulty_rating, difficulty_rd, rating_update_count FROM levels WHERE id = $1',
+      'SELECT difficulty_rating, difficulty_rd, rating_update_count, creator_id FROM levels WHERE id = $1',
       [id]
     );
 
@@ -676,6 +717,7 @@ router.post('/:id/session/:sessionId/end', async (req, res) => {
     const levelDR = levelResult.rows[0].difficulty_rating || ratingSystem.DEFAULT_RATING;
     const levelRD = levelResult.rows[0].difficulty_rd || ratingSystem.DEFAULT_RD;
     const updateCount = levelResult.rows[0].rating_update_count || 0;
+    const isCreator = levelResult.rows[0].creator_id === req.user.id;
 
     // Calculate outcome score
     const outcomeScore = ratingSystem.calculateOutcomeScore(session);
@@ -730,11 +772,29 @@ router.post('/:id/session/:sessionId/end', async (req, res) => {
       [outcomeScore, sessionId]
     );
 
-    // Also record in the old level_plays table for backwards compatibility
+    // Record unique play/clear per user (keeps best clear time if already cleared)
+    // Uses UPSERT to avoid races and relies on unique index (level_id, user_id)
+    const hadClearedBeforeResult = await db.query(
+      'SELECT completed FROM level_plays WHERE level_id = $1 AND user_id = $2',
+      [id, req.user.id]
+    );
+    const hadClearedBefore = hadClearedBeforeResult.rows[0]?.completed === true;
+
     await db.query(
       `INSERT INTO level_plays (level_id, user_id, completed, completion_time, has_beaten)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, req.user.id, session.completed || false, session.completion_time || null, session.completed || false]
+       VALUES ($1, $2, $3, $4, $3)
+       ON CONFLICT (level_id, user_id)
+       DO UPDATE SET
+         completed = level_plays.completed OR EXCLUDED.completed,
+         has_beaten = level_plays.completed OR EXCLUDED.completed,
+         completion_time = CASE
+           WHEN (level_plays.completed OR EXCLUDED.completed) THEN LEAST(
+             COALESCE(level_plays.completion_time, EXCLUDED.completion_time),
+             COALESCE(EXCLUDED.completion_time, level_plays.completion_time)
+           )
+           ELSE NULL
+         END;`,
+      [id, req.user.id, session.completed || false, session.completion_time || null]
     );
 
     // Update level stats
@@ -749,7 +809,7 @@ router.post('/:id/session/:sessionId/end', async (req, res) => {
     );
 
     // Update world record if applicable
-    if (session.completed && session.completion_time) {
+    if (!isCreator && session.completed && session.completion_time) {
       const recordResult = await db.query(
         'SELECT world_record_time FROM level_stats WHERE level_id = $1',
         [id]
@@ -770,8 +830,7 @@ router.post('/:id/session/:sessionId/end', async (req, res) => {
         `INSERT INTO level_records (level_id, user_id, record_type, skill_rating, completion_time)
          VALUES ($1, $2, 'fastest_clear', $3, $4)
          ON CONFLICT (level_id, user_id, record_type) 
-         DO UPDATE SET skill_rating = $3, completion_time = $4, recorded_at = NOW()
-         WHERE level_records.completion_time > $4`,
+         DO UPDATE SET skill_rating = $3, completion_time = LEAST(level_records.completion_time, $4), recorded_at = NOW()`,
         [id, req.user.id, newPlayerRating.skill_rating, session.completion_time]
       );
 
@@ -794,7 +853,7 @@ router.post('/:id/session/:sessionId/end', async (req, res) => {
     }
 
     // Update user stats if level was cleared
-    if (session.completed) {
+    if (session.completed && !hadClearedBefore) {
       await db.query(
         `INSERT INTO user_stats (user_id, total_clears)
          VALUES ($1, 1)

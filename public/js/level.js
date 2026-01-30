@@ -256,6 +256,9 @@ async function loadLevelRecords() {
   const container = document.querySelector('.comments-section');
   
   if (!container) return;
+
+   // Remove previously rendered records to avoid duplication on refresh/rerender
+   document.querySelectorAll('.records-section').forEach(section => section.remove());
   
   try {
     // Fetch different record types

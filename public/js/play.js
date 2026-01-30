@@ -2,7 +2,7 @@ const TILE_SIZE = 16;
 
 // Physics constants
 const GRAVITY = 0.25;
-const MAX_FALL_SPEED = 7;
+const MAX_FALL_SPEED = 6;
 
 // Movement constants
 const PLAYER_SPEED = 4; 
@@ -22,8 +22,12 @@ const JUMP_BUFFER = 6;
 
 // Combat constants
 const ATTACK_DURATION = 6;
-const ATTACK_COOLDOWN = 16;
+const ATTACK_COOLDOWN = 14;
 const ATTACK_RANGE = 16;
+const MAX_HEALTH = 3;
+const INVULN_FRAMES = 90;
+const HEALTH_DISPLAY_FRAMES = 120;
+const HEALTH_FADE_FRAMES = 50;
 
 // Wall jump constants
 const WALL_SLIDE_SPEED = 1.5;
@@ -73,6 +77,9 @@ const game = {
     animFrame: 0,
     animTimer: 0,
     animState: 'idle',
+    health: 1,
+    maxHealth: MAX_HEALTH,
+    invulnTimer: 0,
     // Coyote time and jump buffer
     coyoteTimer: 0,
     jumpBufferTimer: 0,
@@ -95,6 +102,7 @@ const game = {
     attackTimer: 0,
     attackAnimTimer: 0,
     attackCooldown: 0,
+    attackQueued: false,
     attackDir: { x: 1, y: 0 },
     attackLungeVelX: 0,
     attackLungeVelY: 0
@@ -119,7 +127,14 @@ const game = {
     currentTime: 0,
     finalTime: 0
   },
+  healthDisplayTimer: 0,
+  healthFadeTimer: 0,
+  switchState: false,
+  switchCooldown: 0,
   levelCompleted: false,
+  background: null,
+  surpriseAnims: [],
+  confetti: [],
   assets: {
     playerWalk: null,
     playerJump: null,
@@ -130,6 +145,13 @@ const game = {
     spike: null,
     coin: null,
     token: null,
+    healthToken: null,
+    surpriseToken: null,
+    confetti: null,
+    onBlock: null,
+    offBlock: null,
+    onoffSwitch: null,
+    playerHealth: null,
     enemyWalk: null,
     tilesheet: null,
     tilesheet2: null,
@@ -138,6 +160,16 @@ const game = {
     soundPunch: null,
     soundCoin: null,
     soundToken: null,
+    soundSurprisePop: null,
+    soundPop: null,
+    soundTurnOn: null,
+    soundTurnOff: null,
+    bgNight1: null,
+    bgNight2: null,
+    bgNight3: null,
+    bgForest1: null,
+    bgForest2: null,
+    bgForest3: null,
     soundJump: null,
     soundLand: null
   }
@@ -154,6 +186,19 @@ function loadAssets() {
     loadImage('graphics/spike.png').then(img => game.assets.spike = img),
     loadImage('graphics/coin.png').then(img => game.assets.coin = img),
     loadImage('graphics/token.png').then(img => game.assets.token = img),
+    loadImage('graphics/health_token.png').then(img => game.assets.healthToken = img),
+    loadImage('graphics/surprise_token.png').then(img => game.assets.surpriseToken = img),
+    loadImage('graphics/confetti.png').then(img => game.assets.confetti = img),
+    loadImage('graphics/bgs/night/layer_1.png').then(img => game.assets.bgNight1 = img),
+    loadImage('graphics/bgs/night/layer_2.png').then(img => game.assets.bgNight2 = img),
+    loadImage('graphics/bgs/night/layer_3.png').then(img => game.assets.bgNight3 = img),
+    loadImage('graphics/bgs/forest/layer_1.png').then(img => game.assets.bgForest1 = img),
+    loadImage('graphics/bgs/forest/layer_2.png').then(img => game.assets.bgForest2 = img),
+    loadImage('graphics/bgs/forest/layer_3.png').then(img => game.assets.bgForest3 = img),
+    loadImage('graphics/on_block.png').then(img => game.assets.onBlock = img),
+    loadImage('graphics/off_block.png').then(img => game.assets.offBlock = img),
+    loadImage('graphics/onoff_switch.png').then(img => game.assets.onoffSwitch = img),
+    loadImage('graphics/player_health.png').then(img => game.assets.playerHealth = img),
     loadImage('graphics/enemy1_walk.png').then(img => game.assets.enemyWalk = img),
     loadImage('graphics/goal.png').then(img => game.assets.goal = img),
     loadImage('graphics/timer_font.png').then(img => game.assets.timerFont = img),
@@ -167,6 +212,10 @@ function loadAssets() {
     loadAudio('sounds/punch.ogg').then(audio => game.assets.soundPunch = audio),
     loadAudio('sounds/coin.ogg').then(audio => game.assets.soundCoin = audio),
     loadAudio('sounds/token_get.ogg').then(audio => game.assets.soundToken = audio),
+    loadAudio('sounds/surprise_pop.ogg').then(audio => game.assets.soundSurprisePop = audio),
+    loadAudio('sounds/pop.ogg').then(audio => game.assets.soundPop = audio),
+    loadAudio('sounds/turn_on.ogg').then(audio => game.assets.soundTurnOn = audio),
+    loadAudio('sounds/turn_off.ogg').then(audio => game.assets.soundTurnOff = audio),
     loadAudio('sounds/jump.ogg').then(audio => game.assets.soundJump = audio),
     loadAudio('sounds/land.ogg').then(audio => game.assets.soundLand = audio),
     loadAudio('sounds/hurt.ogg').then(audio => game.assets.soundHurt = audio),
@@ -493,6 +542,7 @@ function applyLevelData(level) {
   game.currentLevelTitle = level.title || '';
   game.levelData = level.level_data || {};
   game.levelInfo = level; // Store full metadata
+  game.background = (level.level_data && level.level_data.background) || null;
   
   // Check if level is published and if we're in publish mode
   const urlParams = new URLSearchParams(window.location.search);
@@ -579,8 +629,18 @@ function resetLevelState() {
 
   game.levelWidth = levelData.width || 50;
   game.levelHeight = levelData.height || 20;
-  game.tiles = levelData.tiles || {};
+  // Clone tiles so runtime mutations (e.g., surprise tokens) do not alter the source level data
+  game.tiles = { ...(levelData.tiles || {}) };
+  game.background = levelData.background || null;
   game.animTime = 0;
+
+  // Precomputed tile buckets to reduce per-frame iteration
+  game.coinList = [];
+  game.tokenList = [];
+  game.healthList = [];
+  game.groundTiles = [];
+  game.surpriseAnims = [];
+  game.confetti = [];
 
   game.enemies = [];
   game.collectedCoins = new Set(); // Track collected coins for animation
@@ -588,6 +648,8 @@ function resetLevelState() {
 
   game.collectedTokens = new Set();
   game.tokenAnims = [];
+  game.collectedHealth = new Set();
+  game.healthAnims = [];
 
   game.spawn = { x: TILE_SIZE, y: TILE_SIZE };
 
@@ -614,6 +676,17 @@ function resetLevelState() {
         dead: false
       });
     }
+
+    // Cache tile positions by type for faster per-frame scans
+    if (type === 'coin') {
+      game.coinList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
+    } else if (type === 'diamond') {
+      game.tokenList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
+    } else if (type === 'health') {
+      game.healthList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
+    } else if (type === 'ground' || type === 'tile') {
+      game.groundTiles.push({ key, x, y, type });
+    }
   });
 }
 
@@ -633,6 +706,9 @@ function resetPlayer() {
 
   game.player.deathTimer = 0;
   game.player.deathVelY = 0;
+  game.player.health = 1;
+  game.player.maxHealth = MAX_HEALTH;
+  game.player.invulnTimer = 0;
   
   // Reset coyote time and jump buffer
   game.player.coyoteTimer = 0;
@@ -703,6 +779,25 @@ function update() {
   if (game.timer.started && !game.levelCompleted && !game.player.dead) {
     game.timer.currentTime = performance.now() - game.timer.startTime;
   }
+
+  // Tick down invulnerability frames
+  if (game.player.invulnTimer > 0) {
+    game.player.invulnTimer--;
+  }
+
+  // Tick down health display timer
+  if (game.healthDisplayTimer > 0) {
+    game.healthDisplayTimer--;
+    if (game.healthDisplayTimer <= HEALTH_FADE_FRAMES) {
+      game.healthFadeTimer = game.healthDisplayTimer;
+    } else {
+      game.healthFadeTimer = HEALTH_FADE_FRAMES; // keep alpha at 1 until fade window
+    }
+  }
+
+  if (game.switchCooldown > 0) {
+    game.switchCooldown--;
+  }
   
   // Handle death animation
   if (game.player.dead) {
@@ -714,6 +809,7 @@ function update() {
   updatePlayer();
   updateEnemies();
   updateCoins();
+  updateConfetti();
   handleAttack();
   checkPlayerHazards();
   checkGoalCollision();
@@ -726,42 +822,42 @@ function updateCoins() {
   const cy = p.y + p.height/2;
   const radius = 16; // Pickup radius
 
-  // Check for coin collection
-  Object.entries(game.tiles).forEach(([key, type]) => {
-     if (type === 'coin' && !game.collectedCoins.has(key)) {
-         const [tx, ty] = key.split(',').map(Number);
-         const tileX = tx * TILE_SIZE + TILE_SIZE/2;
-         const tileY = ty * TILE_SIZE + TILE_SIZE/2;
-         
-         const dist = Math.abs(tileX - cx) + Math.abs(tileY - cy);
-         if (dist < radius) {
-             game.collectedCoins.add(key);
-             playSound(game.assets.soundCoin);
-             // Start collection animation
-             game.coinAnims.push({
-                 x: tx * TILE_SIZE,
-                 y: ty * TILE_SIZE,
-                 timer: 0
-             });
-         }
-     } else if (type === 'diamond' && !game.collectedTokens.has(key)) { // Using existing 'diamond' type from map for tokens
-         const [tx, ty] = key.split(',').map(Number);
-         const tileX = tx * TILE_SIZE + TILE_SIZE/2;
-         const tileY = ty * TILE_SIZE + TILE_SIZE/2;
-         
-         const dist = Math.abs(tileX - cx) + Math.abs(tileY - cy);
-         if (dist < radius) {
-             game.collectedTokens.add(key);
-             playSound(game.assets.soundToken);
-             // Start token animation
-             game.tokenAnims.push({
-                 x: tx * TILE_SIZE,
-                 y: ty * TILE_SIZE,
-                 timer: 0
-             });
-         }
-     }
-  });
+  // Check for coin collection using cached lists
+  for (const coin of game.coinList) {
+    if (game.collectedCoins.has(coin.key)) continue;
+    const dist = Math.abs(coin.cx - cx) + Math.abs(coin.cy - cy);
+    if (dist < radius) {
+      game.collectedCoins.add(coin.key);
+      playSound(game.assets.soundCoin);
+      game.coinAnims.push({ x: coin.x, y: coin.y, timer: 0 });
+    }
+  }
+
+  // Token collection (diamonds)
+  for (const token of game.tokenList) {
+    if (game.collectedTokens.has(token.key)) continue;
+    const dist = Math.abs(token.cx - cx) + Math.abs(token.cy - cy);
+    if (dist < radius) {
+      game.collectedTokens.add(token.key);
+      playSound(game.assets.soundToken);
+      game.tokenAnims.push({ x: token.x, y: token.y, timer: 0 });
+    }
+  }
+
+  // Health pickups
+  for (const heart of game.healthList) {
+    if (game.collectedHealth.has(heart.key)) continue;
+    if (game.player.health >= game.player.maxHealth) continue;
+    const dist = Math.abs(heart.cx - cx) + Math.abs(heart.cy - cy);
+    if (dist < radius) {
+      game.collectedHealth.add(heart.key);
+      game.player.health = Math.min(game.player.maxHealth, game.player.health + 1);
+      game.healthDisplayTimer = HEALTH_DISPLAY_FRAMES;
+      game.healthFadeTimer = HEALTH_FADE_FRAMES;
+      playSound(game.assets.soundPop || game.assets.soundCoin);
+      game.healthAnims.push({ x: heart.x, y: heart.y, timer: 0 });
+    }
+  }
 
   // Update animations
   for (let i = game.coinAnims.length - 1; i >= 0; i--) {
@@ -779,6 +875,58 @@ function updateCoins() {
       if (game.tokenAnims[i].timer > 60) {
           game.tokenAnims.splice(i, 1);
       }
+  }
+
+    // Update health pickup animations (4 frames after base frame)
+    for (let i = game.healthAnims.length - 1; i >= 0; i--) {
+      game.healthAnims[i].timer++;
+      if (game.healthAnims[i].timer > 20) {
+        game.healthAnims.splice(i, 1);
+      }
+    }
+
+  // Surprise token collection animations
+  for (let i = game.surpriseAnims.length - 1; i >= 0; i--) {
+    game.surpriseAnims[i].timer++;
+    if (game.surpriseAnims[i].timer > 28) {
+      game.surpriseAnims.splice(i, 1);
+    }
+  }
+}
+
+function updateConfetti() {
+  for (let i = game.confetti.length - 1; i >= 0; i--) {
+    const p = game.confetti[i];
+    p.life++;
+
+    // Gentle gravity so pieces float down after popping up
+    p.vy += 0.08;
+    p.vx *= 0.99;
+    p.vy = Math.min(p.vy, 2.2);
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Cull when faded or far off-screen
+    if (p.life > 90 || p.y - game.camera.y > game.height + 40) {
+      game.confetti.splice(i, 1);
+    }
+  }
+}
+
+function spawnConfetti(cx, cy, count = 10) {
+  const angleSpread = Math.PI * 2;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * angleSpread;
+    const speed = 1 + Math.random() * 1.5;
+    game.confetti.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: -Math.abs(Math.sin(angle) * speed) - 1.2,
+      life: 0,
+      face: Math.random() < 0.5 ? -1 : 1
+    });
   }
 }
 
@@ -972,7 +1120,14 @@ function handleAttack() {
   if (player.attackTimer > 0) player.attackTimer--;
   if (player.attackAnimTimer > 0) player.attackAnimTimer--;
 
-  if (game.keys.attackPressed && player.attackCooldown === 0) {
+  // Queue attack if pressed during cooldown; fire when cooldown hits zero
+  if (game.keys.attackPressed && player.attackCooldown > 0) {
+    player.attackQueued = true;
+  }
+
+  const shouldAttack = (game.keys.attackPressed || player.attackQueued) && player.attackCooldown === 0;
+
+  if (shouldAttack) {
     let dirX = 0;
     let dirY = 0;
 
@@ -993,6 +1148,7 @@ function handleAttack() {
     player.attackAnimTimer = ATTACK_DURATION; // Keep decoupled from hitbox logic
     player.attackCooldown = ATTACK_COOLDOWN;
     playSound(game.assets.soundSwish);
+    player.attackQueued = false;
   }
   game.keys.attackPressed = false;
 
@@ -1024,6 +1180,43 @@ function handleAttack() {
   // ATTACK_DURATION usually 6. 
   // If timer started at 6, loop runs with 6, then 5. Impact needs to be checked on these logic frames.
   const isImpactFrame = player.attackTimer >= ATTACK_DURATION - 1;
+
+  // Toggle on/off switches via attack hit
+  const switches = getCollidingTiles(hurtbox, true).filter(t => t.type === 'onoff_switch');
+  if (switches.length && game.switchCooldown === 0) {
+    game.switchState = !game.switchState;
+    game.switchCooldown = 15;
+    playSound(game.switchState ? game.assets.soundTurnOn : game.assets.soundTurnOff);
+    // Bounce only on downward-facing attack (spike-like)
+    if (player.attackDir.y > 0) {
+      player.velY = BOUNCE_VELOCITY;
+      player.onGround = false;
+    }
+  }
+
+  // Surprise tokens: break into a health pickup, play animation, and spawn confetti
+  const surpriseHits = getCollidingTiles(hurtbox, true).filter(t => t.type === 'surprise_token');
+  let pogoFromSurprise = false;
+  surpriseHits.forEach(tile => {
+    const tx = Math.round(tile.x / TILE_SIZE);
+    const ty = Math.round(tile.y / TILE_SIZE);
+    const key = `${tx},${ty}`;
+    // Guard against duplicate processing if already converted this frame
+    if (game.tiles[key] !== 'surprise_token') return;
+
+    game.tiles[key] = 'health';
+    game.healthList.push({ key, x: tile.x, y: tile.y, cx: tile.x + TILE_SIZE / 2, cy: tile.y + TILE_SIZE / 2 });
+    game.surpriseAnims.push({ x: tile.x, y: tile.y, timer: 0 });
+    spawnConfetti(tile.x + TILE_SIZE / 2, tile.y + TILE_SIZE / 2, 12);
+    playSound(game.assets.soundSurprisePop || game.assets.soundToken);
+
+    if (player.attackDir.y > 0) pogoFromSurprise = true;
+  });
+
+  if (pogoFromSurprise) {
+    player.velY = BOUNCE_VELOCITY;
+    player.onGround = false;
+  }
 
   let hitData = null; // { type: 'enemy' | 'wall' | 'spike', obj: any, dist: number }
   const cx = player.x + player.width / 2;
@@ -1340,6 +1533,19 @@ function updateEnemies() {
       }
     });
 
+    // Kill enemies embedded inside solids (avoid soft-locks)
+    enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+    const embedded = getCollidingTiles(enemyBox, true).some((tile) => {
+      if (!isSolidTile(tile.type)) return false;
+      const overlapW = Math.min(enemyBox.x + enemyBox.width, tile.x + TILE_SIZE) - Math.max(enemyBox.x, tile.x);
+      const overlapH = Math.min(enemyBox.y + enemyBox.height, tile.y + TILE_SIZE) - Math.max(enemyBox.y, tile.y);
+      return overlapW > 1 && overlapH > 1; // Require real overlap, not just touching edges
+    });
+    if (embedded) {
+      enemy.dead = true;
+      return;
+    }
+
     // Edge detection (only when grounded)
     if (enemy.onGround) {
       const frontX = enemy.direction > 0 ? enemy.x + enemy.width : enemy.x - 1;
@@ -1396,18 +1602,19 @@ function checkPlayerHazards() {
 
   // Check spike collisions
   const nearbyTiles = getCollidingTiles(player, true);
-  const hitSpike = nearbyTiles.some((tile) => tile.type === 'spike' && spikeIntersect(player, tile));
-  if (hitSpike) {
-    killPlayer();
+  const spike = nearbyTiles.find((tile) => tile.type === 'spike' && spikeIntersect(player, tile));
+  if (spike) {
+    damagePlayer(spike);
     return;
   }
+
 
   // Check enemy collisions (no stomp mechanic)
   for (let i = game.enemies.length - 1; i >= 0; i--) {
     const enemy = game.enemies[i];
     if (enemy.dead) continue;
     if (!rectsIntersect(player, enemy)) continue;
-    killPlayer();
+    damagePlayer(enemy);
     return;
   }
 }
@@ -1429,6 +1636,36 @@ function killPlayer() {
   game.player.attackCooldown = 0;
 }
 
+// Apply damage with invulnerability and knockback
+function damagePlayer(source) {
+  if (game.player.dead || game.levelCompleted) return;
+  if (game.player.invulnTimer > 0) return;
+
+  // Instant death if already at 1 HP
+  if (game.player.health <= 1) {
+    killPlayer();
+    return;
+  }
+
+  game.player.health -= 1;
+  game.player.invulnTimer = INVULN_FRAMES;
+  game.healthDisplayTimer = HEALTH_DISPLAY_FRAMES;
+  game.healthFadeTimer = HEALTH_FADE_FRAMES;
+  playSound(game.assets.soundHurt);
+
+  // Knockback away from source
+  let dir = 1;
+  if (source && source.x !== undefined) {
+    const srcCenter = (source.x + (source.width || TILE_SIZE) / 2);
+    const playerCenter = game.player.x + game.player.width / 2;
+    dir = playerCenter >= srcCenter ? 1 : -1;
+  }
+  if (dir === 0) dir = 1;
+  game.player.velX = 4 * dir;
+  game.player.velY = -4;
+  game.player.onGround = false;
+}
+
 function updateCamera() {
   // Don't update camera if dead
   if (game.player.dead) return;
@@ -1444,15 +1681,58 @@ function render() {
   const ctx = game.ctx;
   ctx.clearRect(0, 0, game.width, game.height);
 
-  ctx.fillStyle = '#87ceeb';
-  ctx.fillRect(0, 0, game.width, game.height);
-
+  renderBackgrounds();
   renderTiles();
+  renderConfetti();
   renderEnemies();
   renderPlayer();
   renderHurtbox();
   renderTimer();
   // Grid removed
+}
+
+function renderBackgrounds() {
+  const ctx = game.ctx;
+
+  // Base clear color behind all layers
+  const baseColor = game.background === 'forest' ? '#477238' : '#33272a';
+  ctx.fillStyle = baseColor;
+  ctx.fillRect(0, 0, game.width, game.height);
+
+  if (game.background === 'night') {
+    drawBgLayer(game.assets.bgNight3, 0, 0);          // far static
+    drawBgLayer(game.assets.bgNight2, 0.4, 0.25);     // slow parallax
+    drawBgLayer(game.assets.bgNight1, 0.7, 0.35);     // faster parallax (closest)
+  } else if (game.background === 'forest') {
+    drawBgLayer(game.assets.bgForest3, 0, 0);
+    drawBgLayer(game.assets.bgForest2, 0.45, 0.22);
+    drawBgLayer(game.assets.bgForest1, 0.75, 0.32);
+  }
+}
+
+function drawBgLayer(img, parallaxX, parallaxY) {
+  if (!img) return;
+
+  const ctx = game.ctx;
+  const maxX = Math.max(0, game.levelWidth * TILE_SIZE - game.width);
+  const maxY = Math.max(0, game.levelHeight * TILE_SIZE - game.height);
+  const progressX = maxX > 0 ? game.camera.x / maxX : 0;
+  const progressY = maxY > 0 ? game.camera.y / maxY : 0;
+
+  // Horizontal parallax with looping (tile repeat)
+  let startX = Math.floor(-(game.camera.x * parallaxX) % img.width);
+  if (startX > 0) startX -= img.width;
+
+  // Vertical parallax: slight offset, clamped within sprite bounds (no looping)
+  const baseY = game.height - img.height;
+  const maxVertSlide = (img.height >= game.height) ? Math.min(24, img.height - game.height) : 12;
+  const rawOffsetY = baseY - maxVertSlide * (parallaxY || 0) * progressY;
+  // Clamp so the layer never extends past the bottom edge
+  const offsetY = Math.round(Math.min(baseY, Math.max(rawOffsetY, game.height - img.height)));
+
+  for (let x = startX; x < game.width + img.width; x += img.width) {
+    ctx.drawImage(img, Math.round(x), offsetY, img.width, img.height);
+  }
 }
 
 function getHurtbox(player) {
@@ -1581,6 +1861,29 @@ function renderTiles() {
              // frame 0 is default state
              ctx.drawImage(game.assets.token, 0, 0, 16, 16, screenX, screenY, 16, 16);
         }
+      } else if (type === 'health') {
+        if (!game.collectedHealth.has(`${x},${y}`) && game.assets.healthToken) {
+             ctx.drawImage(game.assets.healthToken, 0, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'surprise_token') {
+        if (game.assets.surpriseToken) {
+          ctx.drawImage(game.assets.surpriseToken, 0, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'on_block') {
+        if (game.assets.onBlock) {
+          const frame = game.switchState ? 0 : 1;
+          ctx.drawImage(game.assets.onBlock, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'off_block') {
+        if (game.assets.offBlock) {
+          const frame = game.switchState ? 1 : 0; // opposite
+          ctx.drawImage(game.assets.offBlock, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'onoff_switch') {
+        if (game.assets.onoffSwitch) {
+          const frame = game.switchState ? 0 : 1; // default off uses frame 1
+          ctx.drawImage(game.assets.onoffSwitch, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
+        }
       } else if (type === 'goal') {
         if (game.assets.goal) {
           // Draw full goal image with origin at bottom-left 16x16 tile
@@ -1637,20 +1940,43 @@ function renderTiles() {
       }
   });
 
+        // Draw Health Animations (overlay) using last 4 frames of spritesheet
+        game.healthAnims.forEach(anim => {
+          if (!game.assets.healthToken) return;
+          const screenX = Math.round(anim.x - game.camera.x);
+          const screenY = Math.round(anim.y - game.camera.y);
+          const frame = Math.min(3, Math.floor(anim.timer / 5)); // 4 frames
+          const spriteFrame = 1 + frame; // skip idle frame 0
+          ctx.drawImage(game.assets.healthToken, spriteFrame * 16, 0, 16, 16, screenX, screenY, 16, 16);
+        });
+
+        // Surprise token shatter animations
+        if (game.assets.surpriseToken) {
+          const frames = Math.max(1, Math.floor(game.assets.surpriseToken.width / 16));
+          game.surpriseAnims.forEach(anim => {
+            const screenX = Math.round(anim.x - game.camera.x);
+            const screenY = Math.round(anim.y - game.camera.y);
+            const frameIndex = Math.min(frames - 1, Math.floor(anim.timer / 4));
+            const alpha = Math.max(0, 1 - anim.timer / 28);
+            if (alpha <= 0) return;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(game.assets.surpriseToken, frameIndex * 16, 0, 16, 16, screenX, screenY, 16, 16);
+            ctx.restore();
+          });
+        }
+
   // Second pass: render ground tiles with autotiling
   // Iterate over all tiles in game.tiles instead of the full grid
   const tilesheet1 = game.assets.tilesheet;
   const tilesheet2 = game.assets.tilesheet2;
   
-  for (const key of Object.keys(game.tiles)) {
-    const type = game.tiles[key];
-    if (type !== 'ground' && type !== 'tile') continue;
-    
+  for (const tile of game.groundTiles) {
+    const { x, y, type } = tile;
     // Use tilesheet2 for ground, tilesheet1 for tile
     const tilesheet = type === 'ground' ? tilesheet2 : tilesheet1;
     const useTilesheet = tilesheet && tilesheet.width > 0;
 
-    const [x, y] = key.split(',').map(Number);
     const screenX = Math.round(x * TILE_SIZE - game.camera.x);
     const screenY = Math.round(y * TILE_SIZE - game.camera.y);
 
@@ -1678,6 +2004,32 @@ function renderTiles() {
     }
 
   }
+}
+
+function renderConfetti() {
+  const ctx = game.ctx;
+  const sprite = game.assets.confetti;
+
+  game.confetti.forEach(p => {
+    const screenX = Math.round(p.x - game.camera.x);
+    const screenY = Math.round(p.y - game.camera.y);
+    const alpha = Math.max(0, 1 - p.life / 90);
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(screenX, screenY);
+    if (p.face && p.face < 0) ctx.scale(-1, 1);
+
+    if (sprite) {
+      const size = 8;
+      ctx.drawImage(sprite, 0, 0, sprite.width, sprite.height, -size / 2, -size / 2, size, size);
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+      ctx.fillRect(-2, -2, 4, 4);
+    }
+    ctx.restore();
+  });
 }
 
 // Draw a single 8x8 quadrant from the autotile sheet
@@ -1806,6 +2158,9 @@ function renderPlayer() {
 
   if (sprite) {
     ctx.save();
+    if (p.invulnTimer > 0) {
+      ctx.globalAlpha = 0.6;
+    }
     
     // Draw relative to player center (16x16 hitbox vs 16x16 sprite)
     // Center the sprite on the hitbox center.
@@ -1824,6 +2179,28 @@ function renderPlayer() {
     // Fallback if assets not loaded
     ctx.fillStyle = '#212121';
     ctx.fillRect(screenX, screenY, p.width, p.height);
+  }
+
+  // Render health above the player
+  if (game.assets.playerHealth && game.healthDisplayTimer > 0) {
+    const heartW = 6;
+    const heartH = 6;
+    const padding = -1; // 3px closer than previous spacing
+    const totalWidth = p.maxHealth * (heartW + padding) - padding;
+    const startX = Math.round(screenX + p.width / 2 - totalWidth / 2);
+    const startY = Math.round(screenY - heartH - 6);
+
+    // Fade out near end
+    const alpha = game.healthFadeTimer > 0 ? Math.max(0, game.healthFadeTimer / HEALTH_FADE_FRAMES) : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    for (let i = 0; i < p.maxHealth; i++) {
+      const filled = i < p.health;
+      const frameX = filled ? 0 : 6; // two frames: filled then grey
+      ctx.drawImage(game.assets.playerHealth, frameX, 0, heartW, heartH, startX + i * (heartW + padding), startY, heartW, heartH);
+    }
+    ctx.restore();
   }
 }
 
@@ -1860,6 +2237,8 @@ function getCollidingTiles(entity, includeHazards = false) {
 }
 
 function isSolidTile(type) {
+  if (type === 'on_block') return game.switchState; // solid when ON
+  if (type === 'off_block') return !game.switchState; // solid when OFF
   return type === 'ground' || type === 'tile';
 }
 

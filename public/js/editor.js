@@ -35,6 +35,11 @@ const editor = {
   selectedTile: 'ground',
   levelData: {},
   levelMusic: '', // Selected background music
+  levelBackground: '', // Selected background theme
+  backgroundColors: {
+    night: '#33272a',
+    forest: '#477238'
+  },
   spawnPosition: null, // Track spawn position
   goalPosition: null,  // Track goal position
   isDragging: false,
@@ -65,9 +70,20 @@ const editor = {
     spike: null,
     coin: null,
     token: null,
+    health: null,
+    surpriseToken: null,
+    onBlock: null,
+    offBlock: null,
+    onoffSwitch: null,
     enemyWalk: null,
     playerIdle: null,
-    goal: null
+    goal: null,
+    bgNight1: null,
+    bgNight2: null,
+    bgNight3: null,
+    bgForest1: null,
+    bgForest2: null,
+    bgForest3: null
   },
   assetsLoaded: false
 };
@@ -81,8 +97,19 @@ function loadEditorAssets() {
     loadEditorImage('graphics/spike.png').then(img => editor.assets.spike = img),
     loadEditorImage('graphics/coin.png').then(img => editor.assets.coin = img),
     loadEditorImage('graphics/token.png').then(img => editor.assets.token = img),
+    loadEditorImage('graphics/health_token.png').then(img => editor.assets.health = img),
+    loadEditorImage('graphics/surprise_token.png').then(img => editor.assets.surpriseToken = img),
+    loadEditorImage('graphics/on_block.png').then(img => editor.assets.onBlock = img),
+    loadEditorImage('graphics/off_block.png').then(img => editor.assets.offBlock = img),
+    loadEditorImage('graphics/onoff_switch.png').then(img => editor.assets.onoffSwitch = img),
     loadEditorImage('graphics/enemy1_walk.png').then(img => editor.assets.enemyWalk = img),
     loadEditorImage('graphics/player_idle.png').then(img => editor.assets.playerIdle = img),
+    loadEditorImage('graphics/bgs/night/layer_1.png').then(img => editor.assets.bgNight1 = img),
+    loadEditorImage('graphics/bgs/night/layer_2.png').then(img => editor.assets.bgNight2 = img),
+    loadEditorImage('graphics/bgs/night/layer_3.png').then(img => editor.assets.bgNight3 = img),
+    loadEditorImage('graphics/bgs/forest/layer_1.png').then(img => editor.assets.bgForest1 = img),
+    loadEditorImage('graphics/bgs/forest/layer_2.png').then(img => editor.assets.bgForest2 = img),
+    loadEditorImage('graphics/bgs/forest/layer_3.png').then(img => editor.assets.bgForest3 = img),
     loadEditorImage('graphics/goal.png').then(img => editor.assets.goal = img)
   ]).then(() => {
     editor.assetsLoaded = true;
@@ -198,6 +225,7 @@ function initEditor() {
   editor.canvas.addEventListener('mouseup', handleMouseUp);
   editor.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
   editor.canvas.addEventListener('wheel', handleWheel, { passive: false });
+  applyEditorBackgroundColor();
   
   // Setup keyboard controls
   document.addEventListener('keydown', handleKeyDown);
@@ -221,6 +249,7 @@ function initEditor() {
   // Load assets and user's drafts
   loadEditorAssets().then(() => {
     loadMusicList(); // Fetch available music
+    setupBackgroundSelect();
     renderToolbarPreviews();
     return loadUserDrafts();
   }).then(() => {
@@ -623,8 +652,14 @@ function render() {
   ctx.imageSmoothingEnabled = false;
   
   // Clear canvas
-  ctx.fillStyle = '#87ceeb';
+  const bgColor = editor.backgroundColors[editor.levelBackground] || '#87ceeb';
+  ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const cameraWorldX = camX / editor.zoom;
+  const cameraWorldY = camY / editor.zoom;
+
+  renderEditorBackgrounds(ctx, cameraWorldX, cameraWorldY, editor.zoom, canvas.width, canvas.height);
   
   const startX = Math.floor(camX / scaledTileSize);
   const startY = Math.floor(camY / scaledTileSize);
@@ -781,6 +816,58 @@ function render() {
     `Level Size: ${editor.gridWidth}x${editor.gridHeight} | Zoom: ${Math.round(editor.zoom * 100)}%`;
 }
 
+function renderEditorBackgrounds(ctx, cameraWorldX, cameraWorldY, zoom, canvasWidth, canvasHeight) {
+  if (!editor.levelBackground) return;
+
+  const drawLayer = (img, parallaxX, parallaxY) => {
+    drawEditorBgLayer(ctx, img, parallaxX, parallaxY, cameraWorldX, cameraWorldY, zoom, canvasWidth, canvasHeight);
+  };
+
+  if (editor.levelBackground === 'night') {
+    drawLayer(editor.assets.bgNight3, 0, 0);
+    drawLayer(editor.assets.bgNight2, 0.4, 0.25);
+    drawLayer(editor.assets.bgNight1, 0.7, 0.35);
+  } else if (editor.levelBackground === 'forest') {
+    drawLayer(editor.assets.bgForest3, 0, 0);
+    drawLayer(editor.assets.bgForest2, 0.45, 0.22);
+    drawLayer(editor.assets.bgForest1, 0.75, 0.32);
+  }
+}
+
+function drawEditorBgLayer(ctx, img, parallaxX, parallaxY, cameraWorldX, cameraWorldY, zoom, canvasWidth, canvasHeight) {
+  if (!img) return;
+
+  const levelWidth = editor.gridWidth * editor.tileSize;
+  const levelHeight = editor.gridHeight * editor.tileSize;
+  const viewWidth = canvasWidth / zoom;
+  const viewHeight = canvasHeight / zoom;
+
+  const maxX = Math.max(0, levelWidth - viewWidth);
+  const maxY = Math.max(0, levelHeight - viewHeight);
+  const clampedCamX = Math.max(0, Math.min(cameraWorldX, maxX));
+  const clampedCamY = Math.max(0, Math.min(cameraWorldY, maxY));
+  const progressX = maxX > 0 ? clampedCamX / maxX : 0;
+  const progressY = maxY > 0 ? clampedCamY / maxY : 0;
+
+  const scaledWidth = img.width * zoom;
+  const scaledHeight = img.height * zoom;
+
+  const parallaxOffsetX = clampedCamX * parallaxX * zoom;
+  let startX = Math.floor(-parallaxOffsetX % scaledWidth);
+  if (startX > 0) startX -= scaledWidth;
+
+  const baseY = canvasHeight - scaledHeight;
+  const maxVertSlide = (scaledHeight >= canvasHeight)
+    ? Math.min(24 * zoom, scaledHeight - canvasHeight)
+    : 12 * zoom;
+  const rawOffsetY = baseY - maxVertSlide * (parallaxY || 0) * progressY;
+  const offsetY = Math.round(Math.min(baseY, Math.max(rawOffsetY, canvasHeight - scaledHeight)));
+
+  for (let x = startX; x < canvasWidth + scaledWidth; x += scaledWidth) {
+    ctx.drawImage(img, Math.round(x), offsetY, scaledWidth, scaledHeight);
+  }
+}
+
 // Render a single tile with sprite if available
 function renderEditorTile(ctx, type, screenX, screenY, size) {
   switch (type) {
@@ -803,6 +890,46 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
     case 'diamond':
       if (editor.assets.token) {
         ctx.drawImage(editor.assets.token, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
+    case 'health':
+      if (editor.assets.health) {
+        ctx.drawImage(editor.assets.health, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
+    case 'surprise_token':
+      if (editor.assets.surpriseToken) {
+        ctx.drawImage(editor.assets.surpriseToken, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
+    case 'on_block':
+      if (editor.assets.onBlock) {
+        ctx.drawImage(editor.assets.onBlock, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
+    case 'off_block':
+      if (editor.assets.offBlock) {
+        ctx.drawImage(editor.assets.offBlock, 16, 0, 16, 16, screenX, screenY, size, size); // default off state is solid
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
+    case 'onoff_switch':
+      if (editor.assets.onoffSwitch) {
+        ctx.drawImage(editor.assets.onoffSwitch, 16, 0, 16, 16, screenX, screenY, size, size); // default off frame
       } else {
         drawTile(ctx, type, screenX, screenY, size);
       }
@@ -944,6 +1071,7 @@ async function createNewDraft() {
   editor.levelTitle = getNextDraftTitle();
   editor.isNewDraft = true;
   editor.levelMusic = '';
+  editor.levelBackground = '';
   editor.levelData = {};
   editor.gridWidth = 50;
   editor.gridHeight = 18;
@@ -952,6 +1080,10 @@ async function createNewDraft() {
   if (musicSelect) {
       musicSelect.value = '';
   }
+    const bgSelect = document.getElementById('backgroundSelect');
+    if (bgSelect) {
+      bgSelect.value = '';
+    }
 
   // Update level name input
   const levelNameInput = document.getElementById('levelName');
@@ -1201,6 +1333,31 @@ async function loadMusicList() {
   }
 }
 
+function setupBackgroundSelect() {
+  const select = document.getElementById('backgroundSelect');
+  if (!select) return;
+
+  select.value = editor.levelBackground || '';
+
+  // Apply initial editor canvas background color
+  applyEditorBackgroundColor();
+
+  select.addEventListener('change', (e) => {
+    editor.levelBackground = e.target.value;
+    editor.hasUnsavedChanges = true;
+    applyEditorBackgroundColor();
+    autoSave();
+  });
+}
+
+function applyEditorBackgroundColor() {
+  const color = editor.backgroundColors[editor.levelBackground] || '#87ceeb';
+  const canvasEl = document.getElementById('editorCanvas');
+  if (canvasEl) {
+    canvasEl.style.backgroundColor = color;
+  }
+}
+
 async function loadLevelAndClose(id) {
   // If we are already editing this level, just close
   // Check if we need to save current first?
@@ -1295,11 +1452,16 @@ async function loadLevel(levelId) {
           editor.gridHeight = level.level_data.height || 20;
           editor.levelData = level.level_data.tiles || {};
           editor.levelMusic = level.level_data.music || '';
+            editor.levelBackground = level.level_data.background || '';
 
           const musicSelect = document.getElementById('musicSelect');
           if (musicSelect) {
               musicSelect.value = editor.levelMusic;
           }
+            const bgSelect = document.getElementById('backgroundSelect');
+            if (bgSelect) {
+              bgSelect.value = editor.levelBackground;
+            }
           
           // Restore spawn and goal positions
           Object.keys(editor.levelData).forEach(key => {
@@ -1335,11 +1497,16 @@ async function loadLevel(levelId) {
           editor.gridHeight = level.level_data.height || 20;
           editor.levelData = level.level_data.tiles || {};
           editor.levelMusic = level.level_data.music || '';
+            editor.levelBackground = level.level_data.background || '';
 
           const musicSelect = document.getElementById('musicSelect');
           if (musicSelect) {
               musicSelect.value = editor.levelMusic;
           }
+            const bgSelect = document.getElementById('backgroundSelect');
+            if (bgSelect) {
+              bgSelect.value = editor.levelBackground;
+            }
           
           // Restore spawn and goal positions
           Object.keys(editor.levelData).forEach(key => {
@@ -1387,7 +1554,8 @@ async function autoSave() {
           width: editor.gridWidth,
           height: editor.gridHeight,
           tiles: editor.levelData,
-          music: editor.levelMusic
+          music: editor.levelMusic,
+          background: editor.levelBackground
         }));
         editor.isNewDraft = false;
         editor.hasUnsavedChanges = false;
@@ -1407,7 +1575,8 @@ async function autoSave() {
             width: editor.gridWidth,
             height: editor.gridHeight,
             tiles: editor.levelData,
-            music: editor.levelMusic
+            music: editor.levelMusic,
+            background: editor.levelBackground
           }
         })
       });
@@ -1446,7 +1615,8 @@ async function autoSave() {
       width: editor.gridWidth,
       height: editor.gridHeight,
       tiles: editor.levelData,
-      music: editor.levelMusic
+      music: editor.levelMusic,
+      background: editor.levelBackground
     }));
     editor.hasUnsavedChanges = false;
     updateStatus('Saved (local)');
@@ -1465,7 +1635,8 @@ async function autoSave() {
           width: editor.gridWidth,
           height: editor.gridHeight,
           tiles: editor.levelData,
-          music: editor.levelMusic
+          music: editor.levelMusic,
+          background: editor.levelBackground
         }
       })
     });
@@ -1579,7 +1750,8 @@ function testLevel() {
     width: editor.gridWidth,
     height: editor.gridHeight,
     tiles: editor.levelData,
-    music: editor.levelMusic
+    music: editor.levelMusic,
+    background: editor.levelBackground
   }));
   params.set('source', 'session');
 
@@ -2037,9 +2209,18 @@ function captureThumbnail() {
   const ctx = canvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   
-  // Draw sky background
-  ctx.fillStyle = '#87ceeb';
+  const bgColor = editor.backgroundColors[editor.levelBackground] || '#87ceeb';
+  ctx.fillStyle = bgColor;
   ctx.fillRect(0, 0, outputWidth, outputHeight);
+
+  renderEditorBackgrounds(
+    ctx,
+    startTileX * tileSize,
+    startTileY * tileSize,
+    1,
+    outputWidth,
+    outputHeight
+  );
   
   // First pass: Draw ground tiles with autotiling
   const tilesheet1 = editor.assets.tilesheet;
