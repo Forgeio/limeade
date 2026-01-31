@@ -4,6 +4,17 @@ const TILE_SIZE = 16;
 const GRAVITY = 0.25;
 const MAX_FALL_SPEED = 6;
 
+// Bubble mode physics
+const BUBBLE_GRAVITY = 0.1;
+const BUBBLE_MAX_FALL_SPEED = 2;
+const BUBBLE_GROUND_ACCELERATION = 0.08;
+const BUBBLE_AIR_ACCELERATION = 0.05;
+const BUBBLE_GROUND_FRICTION = 0.92;
+const BUBBLE_AIR_FRICTION = 0.95;
+const BUBBLE_ATTACK_FLOAT_SPEED = 3.5;
+const BUBBLE_PLAYER_SPEED = 1;
+const BUBBLE_JUMP_VELOCITY = -4;
+
 // Movement constants
 const PLAYER_SPEED = 4; 
 const GROUND_ACCELERATION = 0.3;
@@ -21,11 +32,13 @@ const COYOTE_TIME = 8;
 const JUMP_BUFFER = 6;
 
 // Combat constants
-const ATTACK_DURATION = 6;
+const ATTACK_DURATION = 10;
 const ATTACK_COOLDOWN = 14;
 const ATTACK_RANGE = 16;
 const MAX_HEALTH = 3;
 const INVULN_FRAMES = 90;
+const ENEMY_BASE_SPEED = 0.9;
+const ENEMY_INVULN_FRAMES = 30;
 const HEALTH_DISPLAY_FRAMES = 120;
 const HEALTH_FADE_FRAMES = 50;
 
@@ -33,8 +46,8 @@ const HEALTH_FADE_FRAMES = 50;
 const WALL_SLIDE_SPEED = 1.5;
 const WALL_JUMP_VELOCITY_X = 3;
 const WALL_JUMP_VELOCITY_Y = -5;
-const WALL_COYOTE_TIME = 4; // Frames of grace after leaving wall
-const WALL_STICK_FRAMES = 2; // Brief stick to wall before sliding
+const WALL_COYOTE_TIME = 8; // Frames of grace after leaving wall
+const WALL_STICK_FRAMES = 0; // Brief stick to wall before sliding
 const WALL_JUMP_COOLDOWN = 15; // Cooldown between wall jumps
 
 // Death animation constants
@@ -42,6 +55,53 @@ const DEATH_DURATION = 60;
 const DEATH_PAUSE_DURATION = 10;
 const DEATH_RISE_DURATION = 3;
 const DEATH_SPIN_SPEED = 0;
+
+// On/Off switch defaults
+const SWITCH_DEFAULT_STATE = false;
+
+// Gamepad constants (Standard Gamepad layout)
+const GAMEPAD_DEADZONE = 0.25;
+const GAMEPAD_AXIS_X = 0;
+const GAMEPAD_AXIS_Y = 1;
+const GAMEPAD_BUTTON_JUMP = 0;   // A
+const GAMEPAD_BUTTON_ATTACK = 7; // RT (Right Trigger)
+const GAMEPAD_DPAD_UP = 12;
+const GAMEPAD_DPAD_DOWN = 13;
+const GAMEPAD_DPAD_LEFT = 14;
+const GAMEPAD_DPAD_RIGHT = 15;
+
+// Tile rotation support
+const ROTATABLE_TILES = new Set(['spike']);
+
+function isRotatableTile(type) {
+  return ROTATABLE_TILES.has(type);
+}
+
+function normalizeRotation(rot) {
+  const step = Math.round((Number(rot) || 0) / 90) % 4;
+  return ((step + 4) % 4) * 90;
+}
+
+function parseTileEntry(tile) {
+  if (typeof tile === 'string') return { type: tile, rotation: 0 };
+  if (tile && typeof tile === 'object') {
+    return {
+      type: tile.type || '',
+      rotation: normalizeRotation(tile.rotation)
+    };
+  }
+  return { type: '', rotation: 0 };
+}
+
+function normalizeTiles(rawTiles) {
+  const normalized = {};
+  Object.entries(rawTiles || {}).forEach(([key, value]) => {
+    const info = parseTileEntry(value);
+    if (!info.type) return;
+    normalized[key] = isRotatableTile(info.type) ? { type: info.type, rotation: info.rotation } : info.type;
+  });
+  return normalized;
+}
 
 // Initialize Web Audio Context
 const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -54,6 +114,7 @@ const game = {
   started: false, // Has the level started?
   levelInfo: {}, // Metadata (title, desc, creator)
   userStatus: { has_beaten: false, has_liked: null }, // User interactions
+  vibrationsEnabled: true, // Controller vibration preference
   width: 0,
   height: 0,
   levelWidth: 0,
@@ -94,6 +155,7 @@ const game = {
     wallStickTimer: 0,
     wasPressingWallLeft: false,
     wasPressingWallRight: false,
+    isWallSliding: false,
     // Variable jump
     isJumping: false,
     jumpHeld: false,
@@ -105,7 +167,9 @@ const game = {
     attackQueued: false,
     attackDir: { x: 1, y: 0 },
     attackLungeVelX: 0,
-    attackLungeVelY: 0
+    attackLungeVelY: 0,
+    // Bubble powerup
+    bubbleMode: false
   },
   keys: {
     left: false,
@@ -116,6 +180,35 @@ const game = {
     jumpPressed: false, // For detecting new jump press
     attack: false,
     attackPressed: false
+  },
+  keyboard: {
+    left: false,
+    right: false,
+    up: false,
+    down: false,
+    jump: false,
+    attack: false
+  },
+  gamepad: {
+    connected: false,
+    index: null,
+    prevButtons: [],
+    mapping: {
+      dpadLeft: GAMEPAD_DPAD_LEFT,
+      dpadRight: GAMEPAD_DPAD_RIGHT,
+      dpadUp: GAMEPAD_DPAD_UP,
+      dpadDown: GAMEPAD_DPAD_DOWN,
+      buttonJump: GAMEPAD_BUTTON_JUMP,
+      buttonAttack: GAMEPAD_BUTTON_ATTACK
+    },
+    state: {
+      left: false,
+      right: false,
+      up: false,
+      down: false,
+      jump: false,
+      attack: false
+    }
   },
   camera: {
     x: 0,
@@ -129,7 +222,7 @@ const game = {
   },
   healthDisplayTimer: 0,
   healthFadeTimer: 0,
-  switchState: false,
+  switchState: SWITCH_DEFAULT_STATE,
   switchCooldown: 0,
   levelCompleted: false,
   background: null,
@@ -142,21 +235,29 @@ const game = {
     playerDie: null,
     playerIdle: null,
     playerPunch: null,
+    fingerGun: null,
+    bullet: null,
     spike: null,
     coin: null,
     token: null,
     healthToken: null,
     surpriseToken: null,
+    handPowerup: null,
     confetti: null,
     onBlock: null,
     offBlock: null,
     onoffSwitch: null,
     playerHealth: null,
+    enemyHealth: null,
     enemyWalk: null,
+    spikeEnemy: null,
     tilesheet: null,
     tilesheet2: null,
+    stoneBrickTilesheet: null,
+    plankTilesheet: null,
     timerFont: null,
     soundSwish: null,
+    soundShoot: null,
     soundPunch: null,
     soundCoin: null,
     soundToken: null,
@@ -183,11 +284,16 @@ function loadAssets() {
     loadImage('graphics/player_die.png').then(img => game.assets.playerDie = img),
     loadImage('graphics/player_idle.png').then(img => game.assets.playerIdle = img),
     loadImage('graphics/player_hand_punch.png').then(img => game.assets.playerPunch = img),
+    loadImage('graphics/finger_gun.png').then(img => game.assets.fingerGun = img),
+    loadImage('graphics/bullet.png').then(img => game.assets.bullet = img),
     loadImage('graphics/spike.png').then(img => game.assets.spike = img),
     loadImage('graphics/coin.png').then(img => game.assets.coin = img),
     loadImage('graphics/token.png').then(img => game.assets.token = img),
     loadImage('graphics/health_token.png').then(img => game.assets.healthToken = img),
     loadImage('graphics/surprise_token.png').then(img => game.assets.surpriseToken = img),
+    loadImage('graphics/bubble_powerup.png').then(img => game.assets.bubblePowerup = img),
+    loadImage('graphics/hand_powerup.png').then(img => game.assets.handPowerup = img),
+    loadImage('graphics/bubble.png').then(img => game.assets.bubble = img),
     loadImage('graphics/confetti.png').then(img => game.assets.confetti = img),
     loadImage('graphics/bgs/night/layer_1.png').then(img => game.assets.bgNight1 = img),
     loadImage('graphics/bgs/night/layer_2.png').then(img => game.assets.bgNight2 = img),
@@ -199,7 +305,9 @@ function loadAssets() {
     loadImage('graphics/off_block.png').then(img => game.assets.offBlock = img),
     loadImage('graphics/onoff_switch.png').then(img => game.assets.onoffSwitch = img),
     loadImage('graphics/player_health.png').then(img => game.assets.playerHealth = img),
+    loadImage('graphics/enemy_health.png').then(img => game.assets.enemyHealth = img),
     loadImage('graphics/enemy1_walk.png').then(img => game.assets.enemyWalk = img),
+    loadImage('graphics/spike_enemy.png').then(img => game.assets.spikeEnemy = img),
     loadImage('graphics/goal.png').then(img => game.assets.goal = img),
     loadImage('graphics/timer_font.png').then(img => game.assets.timerFont = img),
     loadImage('graphics/tilesheet_1.png').then(img => {
@@ -208,7 +316,14 @@ function loadAssets() {
     loadImage('graphics/tilesheet_2.png').then(img => {
       game.assets.tilesheet2 = img;
     }),
+    loadImage('graphics/stone_brick_tilesheet.png').then(img => {
+      game.assets.stoneBrickTilesheet = img;
+    }),
+    loadImage('graphics/plank_tilesheet.png').then(img => {
+      game.assets.plankTilesheet = img;
+    }),
     loadAudio('sounds/swish.ogg').then(audio => game.assets.soundSwish = audio),
+    loadAudio('sounds/shoot.ogg').then(audio => game.assets.soundShoot = audio),
     loadAudio('sounds/punch.ogg').then(audio => game.assets.soundPunch = audio),
     loadAudio('sounds/coin.ogg').then(audio => game.assets.soundCoin = audio),
     loadAudio('sounds/token_get.ogg').then(audio => game.assets.soundToken = audio),
@@ -378,7 +493,7 @@ async function setupControls() {
   const userControls = await loadUserControls();
   
   // Default controls
-  const defaults = {
+  const defaultsKeyboard = {
     left: 'ArrowLeft',
     right: 'ArrowRight',
     up: 'ArrowUp',
@@ -386,48 +501,69 @@ async function setupControls() {
     jump: 'ArrowUp',
     attack: 'Space'
   };
+
+  const defaultsGamepad = {
+    dpadLeft: GAMEPAD_DPAD_LEFT,
+    dpadRight: GAMEPAD_DPAD_RIGHT,
+    dpadUp: GAMEPAD_DPAD_UP,
+    dpadDown: GAMEPAD_DPAD_DOWN,
+    buttonJump: GAMEPAD_BUTTON_JUMP,
+    buttonAttack: GAMEPAD_BUTTON_ATTACK
+  };
   
   // Use user controls or fall back to defaults
-  let keyMap = defaults;
+  let keyMap = defaultsKeyboard;
+  let gamepadMap = defaultsGamepad;
   if (userControls) {
-    // Validate all required keys exist
-    const requiredKeys = ['left', 'right', 'up', 'down', 'jump', 'attack'];
-    const hasAllKeys = requiredKeys.every(key => userControls[key]);
-    
-    if (hasAllKeys) {
-      keyMap = userControls;
+    if (userControls.keyboard || userControls.gamepad) {
+      keyMap = { ...defaultsKeyboard, ...(userControls.keyboard || {}) };
+      gamepadMap = { ...defaultsGamepad, ...(userControls.gamepad || {}) };
     } else {
-      console.warn('User controls missing required keys, using defaults');
+      // Legacy shape: flat keyboard map
+      keyMap = { ...defaultsKeyboard, ...userControls };
     }
   }
+  game.gamepad.mapping = gamepadMap;
   
   window.addEventListener('keydown', (e) => {
     // Correctly ignore inputs when typing
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
+    // Check for first input to start the game
+    if (game.waitingForFirstInput && !game.levelCompleted) {
+      // Start on any gameplay key
+      if (e.code === keyMap.left || e.code === keyMap.right || e.code === keyMap.up || 
+          e.code === keyMap.down || e.code === keyMap.jump || e.code === keyMap.attack) {
+        resumeGame();
+        return; // Don't process this input frame
+      }
+    }
+
     // Ignore game controls if level is completed (except possibly navigation keys if used for menus, but here we want to stop movement)
     if (game.levelCompleted || game.paused) return;
 
-    if (e.code === keyMap.left) game.keys.left = true;
-    if (e.code === keyMap.right) game.keys.right = true;
-    if (e.code === keyMap.up || e.code === keyMap.jump) {
-      game.keys.up = true;
-      if (!game.keys.jump) {
+    if (e.code === keyMap.left) game.keyboard.left = true;
+    if (e.code === keyMap.right) game.keyboard.right = true;
+    if (e.code === keyMap.up) game.keyboard.up = true;
+    if (e.code === keyMap.down) game.keyboard.down = true;
+    if (e.code === keyMap.jump) {
+      if (!game.keyboard.jump) {
         game.keys.jumpPressed = true; // New press
       }
-      game.keys.jump = true;
+      game.keyboard.jump = true;
     }
-    if (e.code === keyMap.down) game.keys.down = true;
     
     // Attack key
     if (e.code === keyMap.attack) {
-      if (!game.keys.attack) {
+      if (!game.keyboard.attack) {
         game.keys.attackPressed = true; // New attack press
       }
-      game.keys.attack = true;
+      game.keyboard.attack = true;
       // Prevent scrolling
       e.preventDefault(); 
     }
+
+    updateCombinedInputState();
   });
 
   window.addEventListener('keyup', (e) => {
@@ -448,14 +584,27 @@ async function setupControls() {
         }
     }
 
-    if (e.code === keyMap.left) game.keys.left = false;
-    if (e.code === keyMap.right) game.keys.right = false;
-    if (e.code === keyMap.up || e.code === keyMap.jump) {
-      game.keys.up = false;
-      game.keys.jump = false;
-    }
-    if (e.code === keyMap.down) game.keys.down = false;
-    if (e.code === keyMap.attack) game.keys.attack = false;
+    if (e.code === keyMap.left) game.keyboard.left = false;
+    if (e.code === keyMap.right) game.keyboard.right = false;
+    if (e.code === keyMap.up) game.keyboard.up = false;
+    if (e.code === keyMap.jump) game.keyboard.jump = false;
+    if (e.code === keyMap.down) game.keyboard.down = false;
+    if (e.code === keyMap.attack) game.keyboard.attack = false;
+
+    updateCombinedInputState();
+  });
+
+  window.addEventListener('gamepadconnected', (e) => {
+    game.gamepad.connected = true;
+    game.gamepad.index = e.gamepad.index;
+  });
+
+  window.addEventListener('gamepaddisconnected', () => {
+    game.gamepad.connected = false;
+    game.gamepad.index = null;
+    game.gamepad.prevButtons = [];
+    game.gamepad.state = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+    updateCombinedInputState();
   });
 }
 
@@ -467,11 +616,130 @@ async function loadUserControls() {
       return null;
     }
     const user = await response.json();
+    game.vibrationsEnabled = user.vibrations_enabled !== false;
     return user.control_scheme || null;
   } catch (err) {
     console.error('Error loading user controls:', err);
     return null;
   }
+}
+
+function updateCombinedInputState() {
+  const gp = game.gamepad.state || {};
+  const kb = game.keyboard;
+
+  game.keys.left = !!(kb.left || gp.left);
+  game.keys.right = !!(kb.right || gp.right);
+  game.keys.up = !!(kb.up || gp.up);
+  game.keys.down = !!(kb.down || gp.down);
+  game.keys.jump = !!(kb.jump || gp.jump);
+  game.keys.attack = !!(kb.attack || gp.attack);
+}
+
+function vibrateGamepad(duration = 200, weakMagnitude = 0.5, strongMagnitude = 0.5) {
+  if (!game.vibrationsEnabled || !game.gamepad.connected || game.gamepad.index === null) return;
+  
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  const pad = pads[game.gamepad.index];
+  
+  if (pad && pad.vibrationActuator) {
+    pad.vibrationActuator.playEffect('dual-rumble', {
+      duration: duration,
+      weakMagnitude: weakMagnitude,
+      strongMagnitude: strongMagnitude
+    }).catch(() => {});
+  }
+}
+
+function pollGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let pad = null;
+
+  if (game.gamepad.index !== null && pads[game.gamepad.index]) {
+    pad = pads[game.gamepad.index];
+  } else {
+    for (const p of pads) {
+      if (p) {
+        pad = p;
+        game.gamepad.index = p.index;
+        break;
+      }
+    }
+  }
+
+  if (!pad) {
+    game.gamepad.connected = false;
+    game.gamepad.state = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+    updateCombinedInputState();
+    return;
+  }
+
+  game.gamepad.connected = true;
+
+  const buttonPressed = (idx) => {
+    const b = pad.buttons[idx];
+    if (!b) return false;
+    
+    // If button has both pressed and value properties, prefer pressed
+    // Only use value threshold for analog-only buttons (triggers on some controllers)
+    if (b.pressed !== undefined) {
+      return b.pressed;
+    }
+    
+    // Fallback to value threshold for analog-only buttons
+    if (typeof b.value === 'number') {
+      return b.value > 0.5;
+    }
+    
+    return false;
+  };
+
+  const axisX = pad.axes[GAMEPAD_AXIS_X] || 0;
+  const axisY = pad.axes[GAMEPAD_AXIS_Y] || 0;
+
+  const m = game.gamepad.mapping || {};
+  const prev = game.gamepad.prevButtons || [];
+
+  // Check both axes and buttons for directional input
+  // Some controllers (Switch) may have D-pad on axes 6-9 or just buttons
+  const dpadAxisX = pad.axes[6] || 0;  // Some controllers use axis 6 for D-pad horizontal
+  const dpadAxisY = pad.axes[7] || 0;  // Some controllers use axis 7 for D-pad vertical
+
+  const left = axisX < -GAMEPAD_DEADZONE || dpadAxisX < -0.5 || buttonPressed(m.dpadLeft ?? GAMEPAD_DPAD_LEFT);
+  const right = axisX > GAMEPAD_DEADZONE || dpadAxisX > 0.5 || buttonPressed(m.dpadRight ?? GAMEPAD_DPAD_RIGHT);
+  const up = axisY < -GAMEPAD_DEADZONE || dpadAxisY < -0.5 || buttonPressed(m.dpadUp ?? GAMEPAD_DPAD_UP);
+  const down = axisY > GAMEPAD_DEADZONE || dpadAxisY > 0.5 || buttonPressed(m.dpadDown ?? GAMEPAD_DPAD_DOWN);
+
+  const jumpIdx = m.buttonJump ?? GAMEPAD_BUTTON_JUMP;
+  const attackIdx = m.buttonAttack ?? GAMEPAD_BUTTON_ATTACK;
+  
+  const jumpNow = buttonPressed(jumpIdx);
+  const attackNow = buttonPressed(attackIdx);
+
+  // Check for first input to start the game
+  if (game.waitingForFirstInput && !game.levelCompleted) {
+    if (left || right || up || down || jumpNow || attackNow) {
+      resumeGame();
+      return; // Don't process this input frame
+    }
+  }
+
+  const justJump = jumpNow && !prev[jumpIdx];
+  const justAttack = attackNow && !prev[attackIdx];
+
+  if (justJump) game.keys.jumpPressed = true;
+  if (justAttack) game.keys.attackPressed = true;
+
+  // Store current button state using same logic as buttonPressed for analog triggers
+  game.gamepad.prevButtons = pad.buttons.map(b => {
+    if (!b) return false;
+    if (b.pressed !== undefined) return b.pressed;
+    if (typeof b.value === 'number') return b.value > 0.5;
+    return false;
+  });
+  game.gamepad.state = { left, right, up, down, jump: jumpNow, attack: attackNow };
+
+  updateCombinedInputState();
 }
 
 function setupBackButton() {
@@ -552,9 +820,10 @@ function applyLevelData(level) {
   // Only show start menu for published levels that aren't being tested for publishing
   const shouldShowStartMenu = isPublished && mode !== 'publish';
   
-  // Set initial state
-  game.paused = shouldShowStartMenu;
-  game.started = !shouldShowStartMenu;
+  // Set initial state - always start paused, unpause on first input
+  game.paused = true;
+  game.started = false;
+  game.waitingForFirstInput = true;
   
   resetLevelState();
   resetPlayer();
@@ -629,15 +898,20 @@ function resetLevelState() {
 
   game.levelWidth = levelData.width || 50;
   game.levelHeight = levelData.height || 20;
-  // Clone tiles so runtime mutations (e.g., surprise tokens) do not alter the source level data
-  game.tiles = { ...(levelData.tiles || {}) };
+  // Clone & normalize tiles so runtime mutations (e.g., surprise tokens) do not alter the source level data
+  game.tiles = normalizeTiles(levelData.tiles || {});
   game.background = levelData.background || null;
+  game.switchState = SWITCH_DEFAULT_STATE;
+  game.switchCooldown = 0;
   game.animTime = 0;
 
   // Precomputed tile buckets to reduce per-frame iteration
   game.coinList = [];
   game.tokenList = [];
   game.healthList = [];
+  game.bubblePowerupList = [];
+  game.handPowerupList = [];
+  game.bullets = [];
   game.groundTiles = [];
   game.surpriseAnims = [];
   game.confetti = [];
@@ -650,10 +924,15 @@ function resetLevelState() {
   game.tokenAnims = [];
   game.collectedHealth = new Set();
   game.healthAnims = [];
+  game.collectedBubblePowerups = new Set();
+  game.collectedHandPowerups = new Set();
 
   game.spawn = { x: TILE_SIZE, y: TILE_SIZE };
 
-  Object.entries(game.tiles).forEach(([key, type]) => {
+  Object.entries(game.tiles).forEach(([key, value]) => {
+    const { type } = parseTileEntry(value);
+    if (!type) return;
+
     const [x, y] = key.split(',').map(Number);
     const px = x * TILE_SIZE;
     const py = y * TILE_SIZE;
@@ -662,18 +941,32 @@ function resetLevelState() {
       game.spawn = { x: px, y: py };
     }
 
-    if (type === 'enemy') {
+    if (type === 'enemy' || type === 'spike_enemy') {
+      const isSpikeEnemy = type === 'spike_enemy';
+      const height = isSpikeEnemy ? 20 : 14;
+      const width = 14;
+      const originOffsetY = isSpikeEnemy ? (height - TILE_SIZE) : 0; // anchor bottom 16px to tile grid
+      
       game.enemies.push({
+        type,
         x: px,
-        y: py,
-        width: 14,
-        height: 14,
-        velX: 1.2,
+        y: py - originOffsetY,
+        width,
+        height,
+        velX: ENEMY_BASE_SPEED,
         velY: 0,
         direction: -1,
         onGround: false,
         active: false,
-        dead: false
+        dead: false,
+        health: isSpikeEnemy ? 2 : 1,
+        maxHealth: isSpikeEnemy ? 2 : 1,
+        invulnTimer: 0,
+        healthDisplayTimer: 0,
+        healthFadeTimer: 0,
+        knockbackTimer: 0,
+        knockbackVelX: 0,
+        turnTimer: 0
       });
     }
 
@@ -684,10 +977,113 @@ function resetLevelState() {
       game.tokenList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
     } else if (type === 'health') {
       game.healthList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
-    } else if (type === 'ground' || type === 'tile') {
+    } else if (type === 'bubble_powerup') {
+      game.bubblePowerupList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
+    } else if (type === 'hand_powerup') {
+      game.handPowerupList.push({ key, x: px, y: py, cx: px + TILE_SIZE / 2, cy: py + TILE_SIZE / 2 });
+    } else if (type === 'ground' || type === 'tile' || type === 'stone_brick' || type === 'plank') {
       game.groundTiles.push({ key, x, y, type });
     }
   });
+  
+  // Separate overlapping enemies after all have been spawned
+  separateOverlappingEnemies();
+}
+
+function separateOverlappingEnemies() {
+  // Run multiple iterations to resolve all overlaps
+  const maxIterations = 20;
+  for (let iteration = 0; iteration < maxIterations; iteration++) {
+    let hadOverlap = false;
+    
+    for (let i = 0; i < game.enemies.length; i++) {
+      for (let j = i + 1; j < game.enemies.length; j++) {
+        const enemyA = game.enemies[i];
+        const enemyB = game.enemies[j];
+        
+        if (rectsIntersect(enemyA, enemyB)) {
+          hadOverlap = true;
+          
+          // Calculate overlap amounts
+          const overlapX = Math.min(enemyA.x + enemyA.width, enemyB.x + enemyB.width) - Math.max(enemyA.x, enemyB.x);
+          const overlapY = Math.min(enemyA.y + enemyA.height, enemyB.y + enemyB.height) - Math.max(enemyA.y, enemyB.y);
+          
+          // Small gradual push amount per iteration for smooth separation
+          const pushStrength = 1.5;
+          
+          // Push apart on the axis with smaller overlap (easier to separate)
+          if (overlapX < overlapY) {
+            // Separate horizontally
+            const pushAmount = Math.min(overlapX / 2, pushStrength);
+            const oldAX = enemyA.x;
+            const oldBX = enemyB.x;
+            
+            if (enemyA.x < enemyB.x) {
+              enemyA.x -= pushAmount;
+              enemyB.x += pushAmount;
+            } else {
+              enemyA.x += pushAmount;
+              enemyB.x -= pushAmount;
+            }
+            
+            // Check if push would put enemies in walls - if so, revert
+            const aInWall = getCollidingTiles(enemyA, true).some(t => isSolidTile(t.type));
+            const bInWall = getCollidingTiles(enemyB, true).some(t => isSolidTile(t.type));
+            
+            if (aInWall && bInWall) {
+              // Both would hit walls, revert both
+              enemyA.x = oldAX;
+              enemyB.x = oldBX;
+            } else if (aInWall) {
+              // Only A hit wall, push B more
+              enemyA.x = oldAX;
+              enemyB.x = oldBX + (pushAmount * 2);
+            } else if (bInWall) {
+              // Only B hit wall, push A more
+              enemyB.x = oldBX;
+              enemyA.x = oldAX - (pushAmount * 2);
+            }
+          } else {
+            // Prefer horizontal separation for stacked enemies (so they can stand on each other)
+            // Only separate vertically if horizontal overlap is minimal
+            if (overlapX > 2) {
+              // Still some horizontal overlap, push horizontally instead
+              const pushAmount = Math.min(overlapX / 2, pushStrength);
+              const oldAX = enemyA.x;
+              const oldBX = enemyB.x;
+              
+              if (enemyA.x < enemyB.x) {
+                enemyA.x -= pushAmount;
+                enemyB.x += pushAmount;
+              } else {
+                enemyA.x += pushAmount;
+                enemyB.x -= pushAmount;
+              }
+              
+              // Check walls
+              const aInWall = getCollidingTiles(enemyA, true).some(t => isSolidTile(t.type));
+              const bInWall = getCollidingTiles(enemyB, true).some(t => isSolidTile(t.type));
+              
+              if (aInWall && bInWall) {
+                enemyA.x = oldAX;
+                enemyB.x = oldBX;
+              } else if (aInWall) {
+                enemyA.x = oldAX;
+                enemyB.x = oldBX + (pushAmount * 2);
+              } else if (bInWall) {
+                enemyB.x = oldBX;
+                enemyA.x = oldAX - (pushAmount * 2);
+              }
+            }
+            // If horizontally aligned (stacked), allow it - they can stand on each other
+          }
+        }
+      }
+    }
+    
+    // If no overlaps found, we're done
+    if (!hadOverlap) break;
+  }
 }
 
 function resetPlayer() {
@@ -709,6 +1105,8 @@ function resetPlayer() {
   game.player.health = 1;
   game.player.maxHealth = MAX_HEALTH;
   game.player.invulnTimer = 0;
+  game.player.bubbleMode = false;
+  game.player.handPowerupMode = false;
   
   // Reset coyote time and jump buffer
   game.player.coyoteTimer = 0;
@@ -725,10 +1123,14 @@ function resetPlayer() {
   game.player.wallStickTimer = 0;
   game.player.wasPressingWallLeft = false;
   game.player.wasPressingWallRight = false;
+  game.player.isWallSliding = false;
   
   // Reset variable jump state
   game.player.isJumping = false;
   game.player.jumpHeld = false;
+  
+  // Reset bubble mode
+  game.player.bubbleMode = false;
   game.player.facing = 1;
   game.player.attackTimer = 0;
   game.player.attackAnimTimer = 0;
@@ -753,6 +1155,43 @@ function gameLoop(timestamp) {
   const deltaTime = timestamp - lastTime;
   lastTime = timestamp;
 
+  // Check for gamepad input to close pause menu (runs even when paused)
+  if (game.paused) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    let pad = null;
+    
+    // Find connected gamepad
+    for (const p of pads) {
+      if (p) {
+        pad = p;
+        break;
+      }
+    }
+    
+    if (pad && pad.buttons) {
+      // Check if any button was just pressed
+      const anyButtonPressed = pad.buttons.some((btn, idx) => {
+        if (!btn) return false;
+        const isPressed = btn.pressed || (typeof btn.value === 'number' && btn.value > 0.5);
+        const wasPressedBefore = game.gamepad.prevPauseButtons && game.gamepad.prevPauseButtons[idx];
+        return isPressed && !wasPressedBefore;
+      });
+      
+      if (anyButtonPressed) {
+        hidePauseMenu();
+        resumeGame();
+      }
+      
+      // Store current button state for next frame
+      game.gamepad.prevPauseButtons = pad.buttons.map(b => {
+        if (!b) return false;
+        if (b.pressed !== undefined) return b.pressed;
+        if (typeof b.value === 'number') return b.value > 0.5;
+        return false;
+      });
+    }
+  }
+
   if (!game.paused) {
     accumulator += deltaTime;
     
@@ -773,6 +1212,8 @@ function gameLoop(timestamp) {
 }
 
 function update() {
+  pollGamepad();
+
   game.animTime = (game.animTime || 0) + TIMESTEP;
 
   // Update timer if started and not completed
@@ -808,6 +1249,7 @@ function update() {
   
   updatePlayer();
   updateEnemies();
+  updateBullets();
   updateCoins();
   updateConfetti();
   handleAttack();
@@ -856,6 +1298,28 @@ function updateCoins() {
       game.healthFadeTimer = HEALTH_FADE_FRAMES;
       playSound(game.assets.soundPop || game.assets.soundCoin);
       game.healthAnims.push({ x: heart.x, y: heart.y, timer: 0 });
+    }
+  }
+  
+  // Bubble powerup collection
+  for (const bubble of game.bubblePowerupList) {
+    if (game.collectedBubblePowerups.has(bubble.key)) continue;
+    const dist = Math.abs(bubble.cx - cx) + Math.abs(bubble.cy - cy);
+    if (dist < radius) {
+      game.collectedBubblePowerups.add(bubble.key);
+      game.player.bubbleMode = true;
+      playSound(game.assets.soundPop || game.assets.soundCoin);
+    }
+  }
+  
+  // Hand powerup collection
+  for (const hand of game.handPowerupList) {
+    if (game.collectedHandPowerups.has(hand.key)) continue;
+    const dist = Math.abs(hand.cx - cx) + Math.abs(hand.cy - cy);
+    if (dist < radius) {
+      game.collectedHandPowerups.add(hand.key);
+      game.player.handPowerupMode = true;
+      playSound(game.assets.soundCoin);
     }
   }
 
@@ -934,10 +1398,24 @@ function updatePlayer() {
   if (game.levelCompleted) return;
 
   const player = game.player;
-  const maxSpeed = PLAYER_SPEED;
+  const maxSpeed = player.bubbleMode ? BUBBLE_PLAYER_SPEED : PLAYER_SPEED;
 
-  // Start timer on first input
-  if (!game.timer.started && (game.keys.left || game.keys.right || game.keys.jump)) {
+  //Start timer on first input (keyboard or controller)
+  const hasKeyboardInput = game.keys.left || game.keys.right || game.keys.jump;
+  
+  // Check for gamepad input
+  let hasControllerInput = false;
+  if (game.gamepad.connected) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = game.gamepad.index !== null ? pads[game.gamepad.index] : null;
+    if (pad) {
+      const hasStickMovement = Math.abs(pad.axes[0] || 0) > 0.2 || Math.abs(pad.axes[1] || 0) > 0.2;
+      const hasButtonPress = pad.buttons && pad.buttons.some(btn => btn && btn.pressed);
+      hasControllerInput = hasStickMovement || hasButtonPress;
+    }
+  }
+  
+  if (!game.timer.started && (hasKeyboardInput || hasControllerInput)) {
     game.timer.started = true;
     game.timer.startTime = performance.now();
   }
@@ -987,7 +1465,9 @@ function updatePlayer() {
   player.wasPressingWallRight = game.keys.right && player.touchingWallRight;
 
   // Apply gravity
-  player.velY = Math.min(player.velY + GRAVITY, MAX_FALL_SPEED);
+  const gravity = player.bubbleMode ? BUBBLE_GRAVITY : GRAVITY;
+  const maxFall = player.bubbleMode ? BUBBLE_MAX_FALL_SPEED : MAX_FALL_SPEED;
+  player.velY = Math.min(player.velY + gravity, maxFall);
 
   // Move player with collision detection
   movePlayerX(player.velX);
@@ -1012,17 +1492,27 @@ function isPlayerTurning(inputDir, velX) {
 }
 
 function canPerformLeftWallJump(player) {
-  const touchingOrCoyote = player.touchingWallLeft || 
-    (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === -1);
-  // Must be pressing into the wall (left key)
-  return touchingOrCoyote && player.wallJumpCooldown === 0 && game.keys.left;
+  // Currently touching wall - must be pressing into it
+  if (player.touchingWallLeft && game.keys.left && player.wallJumpCooldown === 0) {
+    return true;
+  }
+  // Coyote time - don't require direction key since we just left the wall
+  if (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === -1 && player.wallJumpCooldown === 0) {
+    return true;
+  }
+  return false;
 }
 
 function canPerformRightWallJump(player) {
-  const touchingOrCoyote = player.touchingWallRight || 
-    (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === 1);
-  // Must be pressing into the wall (right key)
-  return touchingOrCoyote && player.wallJumpCooldown === 0 && game.keys.right;
+  // Currently touching wall - must be pressing into it
+  if (player.touchingWallRight && game.keys.right && player.wallJumpCooldown === 0) {
+    return true;
+  }
+  // Coyote time - don't require direction key since we just left the wall
+  if (player.wallCoyoteTimer > 0 && player.wallCoyoteDirection === 1 && player.wallJumpCooldown === 0) {
+    return true;
+  }
+  return false;
 }
 
 function isPlayerSlidingOnWall(player) {
@@ -1052,21 +1542,33 @@ function detectWalls(player) {
   player.touchingWallRight = isWallAtX(rightCheckX, topY, midY, bottomY);
 
   // Update wall coyote time
-  // ONLY grant coyote time if we were actively pressing against the wall (sliding)
-  if (wasTouchingLeft && !player.touchingWallLeft && !player.onGround && player.wasPressingWallLeft) {
-    player.wallCoyoteTimer = WALL_COYOTE_TIME;
-    player.wallCoyoteDirection = -1;
+  // Grant coyote time when we leave a wall (not touching anymore but were before)
+  if (wasTouchingLeft && !player.touchingWallLeft && !player.onGround) {
+    // Only if we have no coyote timer running OR if this is a new wall
+    if (player.wallCoyoteTimer === 0 || player.wallCoyoteDirection !== -1) {
+      player.wallCoyoteTimer = WALL_COYOTE_TIME;
+      player.wallCoyoteDirection = -1;
+    }
   }
-  if (wasTouchingRight && !player.touchingWallRight && !player.onGround && player.wasPressingWallRight) {
-    player.wallCoyoteTimer = WALL_COYOTE_TIME;
-    player.wallCoyoteDirection = 1;
+  if (wasTouchingRight && !player.touchingWallRight && !player.onGround) {
+    // Only if we have no coyote timer running OR if this is a new wall
+    if (player.wallCoyoteTimer === 0 || player.wallCoyoteDirection !== 1) {
+      player.wallCoyoteTimer = WALL_COYOTE_TIME;
+      player.wallCoyoteDirection = 1;
+    }
   }
 }
 
 function updateHorizontalMovement(player, maxSpeed) {
   const onGround = player.onGround;
-  const acceleration = onGround ? GROUND_ACCELERATION : AIR_ACCELERATION;
-  const friction = onGround ? GROUND_FRICTION : AIR_FRICTION;
+  
+  // Use bubble mode physics if active
+  const acceleration = player.bubbleMode 
+    ? (onGround ? BUBBLE_GROUND_ACCELERATION : BUBBLE_AIR_ACCELERATION)
+    : (onGround ? GROUND_ACCELERATION : AIR_ACCELERATION);
+  const friction = player.bubbleMode
+    ? (onGround ? BUBBLE_GROUND_FRICTION : BUBBLE_AIR_FRICTION)
+    : (onGround ? GROUND_FRICTION : AIR_FRICTION);
 
   let inputDir = 0;
   if (game.keys.left) inputDir = -1;
@@ -1146,9 +1648,44 @@ function handleAttack() {
     player.attackDir = { x: dirX, y: dirY };
     player.attackTimer = ATTACK_DURATION;
     player.attackAnimTimer = ATTACK_DURATION; // Keep decoupled from hitbox logic
-    player.attackCooldown = ATTACK_COOLDOWN;
-    playSound(game.assets.soundSwish);
+    
+    // Create bullet projectile if in hand powerup mode
+    if (player.handPowerupMode) {
+      const bulletSpeed = 4; // Slower bullets
+      const spawnOffset = 16;
+      const bullet = {
+        x: player.x + player.width / 2 - 4 + (dirX * spawnOffset), // Spawn 16px in shot direction
+        y: player.y + player.height / 2 - 4 + (dirY * spawnOffset),
+        width: 8,
+        height: 8,
+        velX: dirX * bulletSpeed,
+        velY: dirY * bulletSpeed,
+        dirX: dirX,
+        dirY: dirY
+      };
+      game.bullets.push(bullet);
+      player.attackCooldown = 24; // Slower shooting animation
+      playSound(game.assets.soundShoot);
+    } else {
+      player.attackCooldown = ATTACK_COOLDOWN;
+      playSound(game.assets.soundSwish);
+    }
+    
     player.attackQueued = false;
+    
+    // In bubble mode, apply floating velocity
+    if (player.bubbleMode) {
+      // If both powerups are active, push in OPPOSITE direction (recoil)
+      // If only bubble powerup, push in attack direction (normal)
+      const multiplier = player.handPowerupMode ? -1 : 1;
+      
+      if (dirX !== 0) {
+        player.velX = dirX * BUBBLE_ATTACK_FLOAT_SPEED * multiplier;
+      }
+      if (dirY !== 0) {
+        player.velY = dirY * BUBBLE_ATTACK_FLOAT_SPEED * multiplier;
+      }
+    }
   }
   game.keys.attackPressed = false;
 
@@ -1254,15 +1791,10 @@ function handleAttack() {
     player.attackTimer = 0;
     playSound(game.assets.soundPunch);
 
-    if (hitData.type === 'enemy') {
+    // Damage enemies only if not using hand powerup (bullets do the damage instead)
+    if (hitData.type === 'enemy' && !player.handPowerupMode) {
        const enemy = hitData.obj;
-       if (!enemy.dead) {
-         enemy.dead = true;
-         // Small hop when killed, then gravity takes over in updateEnemies
-         enemy.velY = -3;
-         // Ensure they stay active for the death fall
-         enemy.active = true;
-       }
+       damageEnemy(enemy, player.attackDir);
     }
 
     // Check pogo on suitable targets (Enemy or Spike ONLY)
@@ -1320,7 +1852,8 @@ function performGroundJump(player, maxSpeed) {
   const speedRatio = Math.abs(player.velX) / PLAYER_SPEED;
   const jumpBonus = SPEED_JUMP_BONUS * speedRatio;
 
-  player.velY = BASE_JUMP_VELOCITY + jumpBonus;
+  const baseJump = player.bubbleMode ? BUBBLE_JUMP_VELOCITY : BASE_JUMP_VELOCITY;
+  player.velY = baseJump + jumpBonus;
   player.onGround = false;
   player.isJumping = true;
   playSound(game.assets.soundJump);
@@ -1357,11 +1890,13 @@ function tryWallJump(player) {
 function handleWallSlide(player) {
   if (player.onGround) {
     player.wallStickTimer = 0;
+    player.isWallSliding = false;
     stopSlideSound();
     return;
   }
   
   if (isPlayerSlidingOnWall(player) && player.velY > 0) {
+    player.isWallSliding = true;
     // Start playback if just started sliding
     if (!game.sliding) {
         game.sliding = true;
@@ -1380,6 +1915,7 @@ function handleWallSlide(player) {
       }
     }
   } else {
+    player.isWallSliding = false;
     player.wallStickTimer = 0;
     stopSlideSound();
   }
@@ -1457,6 +1993,21 @@ function movePlayerY(dy) {
       player.isJumping = false; // Hit ceiling, stop variable jump
     }
   });
+  
+  // Check if player is stuck/embedded inside a block (e.g., from onoff blocks activating)
+  const playerBox = { x: player.x, y: player.y, width: player.width, height: player.height };
+  const stuck = getCollidingTiles(playerBox).some((tile) => {
+    if (!isSolidTile(tile.type)) return false;
+    const overlapW = Math.min(playerBox.x + playerBox.width, tile.x + TILE_SIZE) - Math.max(playerBox.x, tile.x);
+    const overlapH = Math.min(playerBox.y + playerBox.height, tile.y + TILE_SIZE) - Math.max(playerBox.y, tile.y);
+    // Kill if significantly embedded (more than 3/4 of player's size)
+    return overlapW > player.width * 0.75 && overlapH > player.height * 0.75;
+  });
+  
+  if (stuck && !player.dead) {
+    player.dead = true;
+    playSound(game.assets.soundDeath);
+  }
 }
 
 function checkGoalCollision() {
@@ -1490,6 +2041,18 @@ function updateEnemies() {
     // Always process dead enemies (falling off screen)
     if (!enemy.active && !enemy.dead) return;
 
+    if (enemy.invulnTimer > 0) {
+      enemy.invulnTimer--;
+    }
+    if (enemy.healthDisplayTimer > 0) {
+      enemy.healthDisplayTimer--;
+      if (enemy.healthDisplayTimer <= HEALTH_FADE_FRAMES) {
+        enemy.healthFadeTimer = enemy.healthDisplayTimer;
+      } else {
+        enemy.healthFadeTimer = HEALTH_FADE_FRAMES;
+      }
+    }
+
     if (enemy.dead) {
         enemy.velY = Math.min(enemy.velY + GRAVITY, MAX_FALL_SPEED);
         enemy.y += enemy.velY;
@@ -1499,8 +2062,42 @@ function updateEnemies() {
     enemy.onGround = false;
     enemy.velY = Math.min(enemy.velY + GRAVITY, MAX_FALL_SPEED);
 
-    // Horizontal movement
-    enemy.x += enemy.velX * enemy.direction;
+    // Horizontal movement (pause AI when in knockback)
+    if (enemy.knockbackTimer > 0) {
+      enemy.x += enemy.knockbackVelX;
+
+      // Bounce off walls/spikes during knockback
+      let enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+      const wallHits = getCollidingTiles(enemyBox, true).filter((tile) => isSolidTile(tile.type) || tile.type === 'spike');
+      if (wallHits.length) {
+        enemy.x -= enemy.knockbackVelX; // revert
+        enemy.knockbackVelX *= -0.6;    // bounce and dampen
+        enemy.x += enemy.knockbackVelX;
+        enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+      }
+
+      // Bounce off other enemies during knockback
+      const hitEnemy = game.enemies.find(e => e !== enemy && e.active && !e.dead && rectsIntersect(enemyBox, e));
+      if (hitEnemy) {
+        enemy.x -= enemy.knockbackVelX;
+        enemy.knockbackVelX *= -0.6;
+        enemy.x += enemy.knockbackVelX;
+        enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+      }
+
+      enemy.knockbackVelX *= 0.82;
+      enemy.knockbackTimer--;
+    } else {
+      // Handle turn timer
+      if (enemy.turnTimer > 0) {
+        enemy.turnTimer--;
+        // Slow down during turn (20% speed)
+        enemy.x += enemy.velX * enemy.direction * 0.2;
+      } else {
+        // Normal movement
+        enemy.x += enemy.velX * enemy.direction;
+      }
+    }
 
     let enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
 
@@ -1514,12 +2111,32 @@ function updateEnemies() {
 
     if (collisionsX.length || hitEnemy) {
       enemy.direction *= -1;
+      enemy.turnTimer = 8; // 8 frames for turn animation
+      // Move at full speed to get out of collision, then slow down will happen next frame
       enemy.x += enemy.velX * enemy.direction;
     }
 
     // Vertical movement
     enemy.y += enemy.velY;
     enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+    
+    // Check for landing on other enemies (stand on top)
+    if (enemy.velY > 0) {
+      const enemyBelow = game.enemies.find(e => {
+        if (e === enemy || !e.active || e.dead) return false;
+        // Check if this enemy is directly below
+        const horizontalOverlap = enemy.x < e.x + e.width && enemy.x + enemy.width > e.x;
+        const verticalContact = enemy.y + enemy.height >= e.y && enemy.y + enemy.height <= e.y + 4;
+        return horizontalOverlap && verticalContact;
+      });
+      
+      if (enemyBelow) {
+        enemy.y = enemyBelow.y - enemy.height;
+        enemy.velY = 0;
+        enemy.onGround = true;
+      }
+    }
+    
     // Enemies treat spikes as solid ground
     const collisionsY = getCollidingTiles(enemyBox, true).filter((tile) => isSolidTile(tile.type) || tile.type === 'spike');
     collisionsY.forEach((tile) => {
@@ -1532,6 +2149,35 @@ function updateEnemies() {
         enemy.velY = 0;
       }
     });
+    
+    // Gentle horizontal separation if enemies overlap (but allow vertical stacking)
+    enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+    const overlappingEnemy = game.enemies.find(e => e !== enemy && e.active && !e.dead && rectsIntersect(enemyBox, e));
+    if (overlappingEnemy) {
+      const overlapX = Math.min(enemy.x + enemy.width, overlappingEnemy.x + overlappingEnemy.width) - Math.max(enemy.x, overlappingEnemy.x);
+      const overlapY = Math.min(enemy.y + enemy.height, overlappingEnemy.y + overlappingEnemy.height) - Math.max(enemy.y, overlappingEnemy.y);
+      
+      // Only push horizontally if there's significant side-by-side overlap
+      // Allow vertical stacking (one on top of another)
+      if (overlapX > 2 && overlapY < enemy.height - 2) {
+        // Side-by-side collision, push apart gently
+        const pushAmount = Math.min(overlapX * 0.3, 1.5); // Gentle push
+        const oldX = enemy.x;
+        
+        if (enemy.x < overlappingEnemy.x) {
+          enemy.x -= pushAmount;
+        } else {
+          enemy.x += pushAmount;
+        }
+        
+        // Don't push into walls
+        enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
+        const inWall = getCollidingTiles(enemyBox, true).some(t => isSolidTile(t.type));
+        if (inWall) {
+          enemy.x = oldX; // Revert if pushed into wall
+        }
+      }
+    }
 
     // Kill enemies embedded inside solids (avoid soft-locks)
     enemyBox = { x: enemy.x, y: enemy.y, width: enemy.width, height: enemy.height };
@@ -1539,10 +2185,13 @@ function updateEnemies() {
       if (!isSolidTile(tile.type)) return false;
       const overlapW = Math.min(enemyBox.x + enemyBox.width, tile.x + TILE_SIZE) - Math.max(enemyBox.x, tile.x);
       const overlapH = Math.min(enemyBox.y + enemyBox.height, tile.y + TILE_SIZE) - Math.max(enemyBox.y, tile.y);
-      return overlapW > 1 && overlapH > 1; // Require real overlap, not just touching edges
+      // Kill only if deeply embedded (more than 80% of the enemy's size)
+      return overlapW > enemy.width * 0.8 && overlapH > enemy.height * 0.8;
     });
     if (embedded) {
       enemy.dead = true;
+      enemy.healthDisplayTimer = 0;
+      enemy.healthFadeTimer = 0;
       return;
     }
 
@@ -1553,12 +2202,98 @@ function updateEnemies() {
       // Check if there is solid ground OR a spike at foot position
       if (!isSolidAt(frontX, footY) && !isSpikeAt(frontX, footY)) {
         enemy.direction *= -1;
+        enemy.turnTimer = 8; // 8 frames for turn animation
       }
     }
   });
 
   // Remove enemies that have fallen far off the map
   game.enemies = game.enemies.filter(e => e.y < (game.levelHeight + 5) * TILE_SIZE);
+}
+
+function updateBullets() {
+  for (let i = game.bullets.length - 1; i >= 0; i--) {
+    const bullet = game.bullets[i];
+    
+    // Move bullet
+    bullet.x += bullet.velX;
+    bullet.y += bullet.velY;
+    
+    let destroyed = false;
+    
+    // Check collision with enemies
+    for (const enemy of game.enemies) {
+      if (enemy.dead) continue;
+      if (rectsIntersect(bullet, enemy)) {
+        // Damage enemy
+        const attackDir = { x: Math.sign(bullet.velX) || 0, y: Math.sign(bullet.velY) || 0 };
+        damageEnemy(enemy, attackDir);
+        playSound(game.assets.soundPunch);
+        destroyed = true;
+        break;
+      }
+    }
+    
+    if (destroyed) {
+      game.bullets.splice(i, 1);
+      continue;
+    }
+    
+    // Check collision with tiles
+    const bulletBox = { x: bullet.x, y: bullet.y, width: bullet.width, height: bullet.height };
+    const tiles = getCollidingTiles(bulletBox, true);
+    
+    for (const tile of tiles) {
+      // Destroy on solid tiles
+      if (isSolidTile(tile.type)) {
+        destroyed = true;
+        break;
+      }
+      
+      // Destroy on spikes
+      if (tile.type === 'spike' && spikeIntersect(bulletBox, tile)) {
+        destroyed = true;
+        break;
+      }
+      
+      // Toggle switches
+      if (tile.type === 'onoff_switch' && game.switchCooldown === 0) {
+        game.switchState = !game.switchState;
+        game.switchCooldown = 15;
+        playSound(game.switchState ? game.assets.soundTurnOn : game.assets.soundTurnOff);
+        destroyed = true;
+        break;
+      }
+      
+      // Pop surprise tokens
+      if (tile.type === 'surprise_token') {
+        const tx = Math.round(tile.x / TILE_SIZE);
+        const ty = Math.round(tile.y / TILE_SIZE);
+        const key = `${tx},${ty}`;
+        
+        if (game.tiles[key] === 'surprise_token') {
+          game.tiles[key] = 'health';
+          game.healthList.push({ key, x: tile.x, y: tile.y, cx: tile.x + TILE_SIZE / 2, cy: tile.y + TILE_SIZE / 2 });
+          game.surpriseAnims.push({ x: tile.x, y: tile.y, timer: 0 });
+          spawnConfetti(tile.x + TILE_SIZE / 2, tile.y + TILE_SIZE / 2, 12);
+          playSound(game.assets.soundSurprisePop || game.assets.soundToken);
+          destroyed = true;
+          break;
+        }
+      }
+    }
+    
+    if (destroyed) {
+      game.bullets.splice(i, 1);
+      continue;
+    }
+    
+    // Remove bullets that are off screen
+    if (bullet.x < -100 || bullet.x > game.levelWidth * TILE_SIZE + 100 ||
+        bullet.y < -100 || bullet.y > game.levelHeight * TILE_SIZE + 100) {
+      game.bullets.splice(i, 1);
+    }
+  }
 }
 
 function updateDeathAnimation() {
@@ -1604,17 +2339,78 @@ function checkPlayerHazards() {
   const nearbyTiles = getCollidingTiles(player, true);
   const spike = nearbyTiles.find((tile) => tile.type === 'spike' && spikeIntersect(player, tile));
   if (spike) {
-    damagePlayer(spike);
+    if (player.bubbleMode) {
+      // Bounce up from spikes in bubble mode, but lose the powerup
+      player.velY = BOUNCE_VELOCITY;
+      player.onGround = false;
+      player.bubbleMode = false;
+      player.invulnTimer = INVULN_FRAMES;
+      playSound(game.assets.soundPop || game.assets.soundHurt);
+      vibrateGamepad(150, 0.4, 0.6);
+    } else if (player.handPowerupMode) {
+      // Lose hand powerup and get iframes
+      player.handPowerupMode = false;
+      player.invulnTimer = INVULN_FRAMES;
+      playSound(game.assets.soundHurt);
+      vibrateGamepad(150, 0.4, 0.6);
+    } else {
+      damagePlayer(spike);
+    }
     return;
   }
 
 
-  // Check enemy collisions (no stomp mechanic)
+  // Check enemy collisions
   for (let i = game.enemies.length - 1; i >= 0; i--) {
     const enemy = game.enemies[i];
     if (enemy.dead) continue;
     if (!rectsIntersect(player, enemy)) continue;
-    damagePlayer(enemy);
+    
+    // Check if stomping enemy (attacking from above)
+    const isStomping = player.velY > 0 && player.y + player.height / 2 < enemy.y + enemy.height / 2;
+    
+    if (isStomping) {
+      if (player.bubbleMode) {
+        // Bubble mode: bounce off all enemies
+        player.velY = BOUNCE_VELOCITY;
+        player.onGround = false;
+        // Kill regular enemies when stomping in bubble mode
+        if (enemy.type !== 'spike_enemy') {
+          enemy.dead = true;
+          playSound(game.assets.soundPunch);
+        } else {
+          // Spike enemies: lose bubble powerup and get iframes
+          player.bubbleMode = false;
+          player.invulnTimer = INVULN_FRAMES;
+          playSound(game.assets.soundPop || game.assets.soundHurt);
+          vibrateGamepad(150, 0.4, 0.6);
+        }
+      } else if (player.handPowerupMode) {
+        // Hand powerup: lose it and get iframes
+        player.handPowerupMode = false;
+        player.invulnTimer = INVULN_FRAMES;
+        playSound(game.assets.soundHurt);
+        vibrateGamepad(150, 0.4, 0.6);
+      } else {
+        // Regular mode: take damage (no stomp mechanic, must use attack to pogo)
+        damagePlayer(enemy);
+      }
+    } else {
+      // Side collision - take damage or lose powerup
+      if (player.bubbleMode) {
+        player.bubbleMode = false;
+        player.invulnTimer = INVULN_FRAMES;
+        playSound(game.assets.soundPop || game.assets.soundHurt);
+        vibrateGamepad(150, 0.4, 0.6);
+      } else if (player.handPowerupMode) {
+        player.handPowerupMode = false;
+        player.invulnTimer = INVULN_FRAMES;
+        playSound(game.assets.soundHurt);
+        vibrateGamepad(150, 0.4, 0.6);
+      } else {
+        damagePlayer(enemy);
+      }
+    }
     return;
   }
 }
@@ -1625,6 +2421,8 @@ function killPlayer() {
   game.player.dead = true;
   game.player.deathTimer = 0;
   game.player.deathVelY = 0;
+  
+  vibrateGamepad(400, 0.8, 1.0);
   
   stopSlideSound();
   game.player.velX = 0;
@@ -1652,6 +2450,7 @@ function damagePlayer(source) {
   game.healthDisplayTimer = HEALTH_DISPLAY_FRAMES;
   game.healthFadeTimer = HEALTH_FADE_FRAMES;
   playSound(game.assets.soundHurt);
+  vibrateGamepad(150, 0.4, 0.6);
 
   // Knockback away from source
   let dir = 1;
@@ -1664,6 +2463,55 @@ function damagePlayer(source) {
   game.player.velX = 4 * dir;
   game.player.velY = -4;
   game.player.onGround = false;
+}
+
+function damageEnemy(enemy, attackDir) {
+  if (!enemy || enemy.dead) return { damaged: false };
+
+  const downwardStrike = attackDir && attackDir.y > 0;
+
+  // Spike enemies cannot be damaged from above, but still allow pogo elsewhere
+  if (enemy.type === 'spike_enemy' && downwardStrike) {
+    return { damaged: false, blocked: true };
+  }
+
+  if (enemy.invulnTimer > 0) {
+    return { damaged: false, blocked: true };
+  }
+
+  // Knockback follows attack direction (horizontal only)
+  let dir = attackDir && attackDir.x !== 0 ? Math.sign(attackDir.x) : 0;
+  if (dir === 0) {
+    const playerCenter = game.player.x + game.player.width / 2;
+    const enemyCenter = enemy.x + enemy.width / 2;
+    dir = playerCenter >= enemyCenter ? 1 : -1;
+  }
+
+  const knockback = 5.5;
+  enemy.x += knockback * dir; // small instant push
+  enemy.knockbackVelX = knockback * dir;
+  enemy.knockbackTimer = 12;
+  enemy.velX = ENEMY_BASE_SPEED + 0.3; // resume speed after knockback decays
+  enemy.velY = 0;
+  // Keep movement direction unchanged after hit; movement is paused while knockback runs
+  enemy.onGround = false;
+  enemy.active = true;
+
+  enemy.invulnTimer = ENEMY_INVULN_FRAMES;
+  enemy.healthDisplayTimer = HEALTH_DISPLAY_FRAMES;
+  enemy.healthFadeTimer = HEALTH_FADE_FRAMES;
+
+  enemy.health -= 1;
+  if (enemy.health <= 0) {
+    enemy.dead = true;
+    enemy.velY = -3;
+    enemy.invulnTimer = 0;
+    enemy.healthDisplayTimer = 0;
+    enemy.healthFadeTimer = 0;
+    return { damaged: true, killed: true };
+  }
+
+  return { damaged: true, killed: false };
 }
 
 function updateCamera() {
@@ -1685,6 +2533,7 @@ function render() {
   renderTiles();
   renderConfetti();
   renderEnemies();
+  renderBullets();
   renderPlayer();
   renderHurtbox();
   renderTimer();
@@ -1700,13 +2549,13 @@ function renderBackgrounds() {
   ctx.fillRect(0, 0, game.width, game.height);
 
   if (game.background === 'night') {
-    drawBgLayer(game.assets.bgNight3, 0, 0);          // far static
-    drawBgLayer(game.assets.bgNight2, 0.4, 0.25);     // slow parallax
-    drawBgLayer(game.assets.bgNight1, 0.7, 0.35);     // faster parallax (closest)
+    drawBgLayer(game.assets.bgNight3, 0.1, 0.1);          // far static
+    drawBgLayer(game.assets.bgNight2, 0.2, 0.2);     // gentle parallax
+    drawBgLayer(game.assets.bgNight1, 0.3, 0.25);    // closer, still subtle
   } else if (game.background === 'forest') {
-    drawBgLayer(game.assets.bgForest3, 0, 0);
-    drawBgLayer(game.assets.bgForest2, 0.45, 0.22);
-    drawBgLayer(game.assets.bgForest1, 0.75, 0.32);
+    drawBgLayer(game.assets.bgForest3, 0.1, 0.2);
+    drawBgLayer(game.assets.bgForest2, 0.2, 0.3);
+    drawBgLayer(game.assets.bgForest1, 0.3, 0.4);
   }
 }
 
@@ -1714,25 +2563,41 @@ function drawBgLayer(img, parallaxX, parallaxY) {
   if (!img) return;
 
   const ctx = game.ctx;
-  const maxX = Math.max(0, game.levelWidth * TILE_SIZE - game.width);
-  const maxY = Math.max(0, game.levelHeight * TILE_SIZE - game.height);
-  const progressX = maxX > 0 ? game.camera.x / maxX : 0;
-  const progressY = maxY > 0 ? game.camera.y / maxY : 0;
 
   // Horizontal parallax with looping (tile repeat)
   let startX = Math.floor(-(game.camera.x * parallaxX) % img.width);
   if (startX > 0) startX -= img.width;
 
-  // Vertical parallax: slight offset, clamped within sprite bounds (no looping)
-  const baseY = game.height - img.height;
-  const maxVertSlide = (img.height >= game.height) ? Math.min(24, img.height - game.height) : 12;
-  const rawOffsetY = baseY - maxVertSlide * (parallaxY || 0) * progressY;
-  // Clamp so the layer never extends past the bottom edge
-  const offsetY = Math.round(Math.min(baseY, Math.max(rawOffsetY, game.height - img.height)));
+  // Vertical parallax: use per-layer factor and clamp travel so tiny levels don't scroll too fast
+  let offsetY;
+  const verticalTravel = img.height - game.height;
+  if (verticalTravel <= 0) {
+    // Background shorter than view: pin to bottom
+    offsetY = game.height - img.height;
+  } else {
+    const targetOffset = -game.camera.y * parallaxY;
+    offsetY = clamp(targetOffset, -verticalTravel, 0);
+  }
 
   for (let x = startX; x < game.width + img.width; x += img.width) {
     ctx.drawImage(img, Math.round(x), offsetY, img.width, img.height);
   }
+}
+
+function drawSpriteWithRotation(ctx, img, sx, sy, sw, sh, dx, dy, dw, dh, rotationDegrees = 0) {
+  const rotation = normalizeRotation(rotationDegrees);
+  if (!rotation) {
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    return;
+  }
+
+  const cx = dx + dw / 2;
+  const cy = dy + dh / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
 }
 
 function getHurtbox(player) {
@@ -1768,14 +2633,15 @@ function renderHurtbox() {
   const screenX = hurtbox.x - game.camera.x;
   const screenY = hurtbox.y - game.camera.y;
 
-  const sprite = game.assets.playerPunch;
+  // Use finger gun sprite if in hand powerup mode, otherwise use regular punch
+  const sprite = p.handPowerupMode ? game.assets.fingerGun : game.assets.playerPunch;
   
   if (sprite) {
     const centerX = screenX + hurtbox.width / 2;
     const centerY = screenY + hurtbox.height / 2;
 
     // Animation frame logic
-    const totalFrames = 3;
+    const totalFrames = 4;
     const progress = ATTACK_DURATION - p.attackAnimTimer; 
     let frame = Math.floor(progress / (ATTACK_DURATION / totalFrames));
     if (frame >= totalFrames) frame = totalFrames - 1;
@@ -1783,7 +2649,13 @@ function renderHurtbox() {
     ctx.save();
     ctx.translate(centerX, centerY);
 
-    // Rotation/Flip logic
+    // Flip first based on player facing direction
+    if (p.facing === -1 && p.attackDir.x === 0) {
+      // Only flip for vertical attacks when facing left
+      ctx.scale(-1, 1);
+    }
+
+    // Rotation logic
     if (p.attackDir.y < 0) { // Up
         ctx.rotate(-Math.PI / 2);
     } else if (p.attackDir.y > 0) { // Down
@@ -1825,7 +2697,7 @@ function isTileSolidAtCoords(x, y, tileType) {
   const key = `${x},${y}`;
   const t = game.tiles[key];
   // Only match the same tile type for autotiling
-  return t === tileType;
+  return parseTileEntry(t).type === tileType;
 }
 
 function renderTiles() {
@@ -1843,14 +2715,15 @@ function renderTiles() {
   // First pass: render non-ground tiles (spikes, goals, etc.)
   for (let y = startY; y < endY; y++) {
     for (let x = startX; x < endX; x++) {
-      const type = game.tiles[`${x},${y}`];
+      const tileEntry = game.tiles[`${x},${y}`];
+      const { type, rotation } = parseTileEntry(tileEntry);
       if (!type) continue;
       
       const screenX = Math.round(x * TILE_SIZE - game.camera.x);
       const screenY = Math.round(y * TILE_SIZE - game.camera.y);
       
       if (type === 'spike' && game.assets.spike) {
-        drawTile(ctx, type, screenX, screenY, TILE_SIZE, 0, 0, game.assets.spike);
+        drawSpriteWithRotation(ctx, game.assets.spike, 0, 0, 16, 16, screenX, screenY, TILE_SIZE, TILE_SIZE, rotation);
       } else if (type === 'coin') { 
         if (!game.collectedCoins.has(`${x},${y}`) && game.assets.coin) {
              // frame 0 is default state
@@ -1865,23 +2738,32 @@ function renderTiles() {
         if (!game.collectedHealth.has(`${x},${y}`) && game.assets.healthToken) {
              ctx.drawImage(game.assets.healthToken, 0, 0, 16, 16, screenX, screenY, 16, 16);
         }
+      } else if (type === 'bubble_powerup') {
+        if (!game.collectedBubblePowerups.has(`${x},${y}`) && game.assets.bubblePowerup) {
+             ctx.drawImage(game.assets.bubblePowerup, 0, 0, 16, 16, screenX, screenY, 16, 16);
+        }
+      } else if (type === 'hand_powerup') {
+        if (!game.collectedHandPowerups.has(`${x},${y}`) && game.assets.handPowerup) {
+             ctx.drawImage(game.assets.handPowerup, 0, 0, 16, 16, screenX, screenY, 16, 16);
+        }
       } else if (type === 'surprise_token') {
         if (game.assets.surpriseToken) {
           ctx.drawImage(game.assets.surpriseToken, 0, 0, 16, 16, screenX, screenY, 16, 16);
         }
       } else if (type === 'on_block') {
         if (game.assets.onBlock) {
-          const frame = game.switchState ? 0 : 1;
+          const frame = game.switchState ? 0 : 1; // solid/visible when switch is ON
           ctx.drawImage(game.assets.onBlock, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
         }
       } else if (type === 'off_block') {
         if (game.assets.offBlock) {
-          const frame = game.switchState ? 1 : 0; // opposite
+          const frame = game.switchState ? 1 : 0; // solid/visible when switch is OFF
           ctx.drawImage(game.assets.offBlock, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
         }
       } else if (type === 'onoff_switch') {
         if (game.assets.onoffSwitch) {
-          const frame = game.switchState ? 0 : 1; // default off uses frame 1
+          // Frame 0 = OFF, Frame 1 = ON (per sprite sheet)
+          const frame = game.switchState ? 1 : 0;
           ctx.drawImage(game.assets.onoffSwitch, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
         }
       } else if (type === 'goal') {
@@ -1970,11 +2852,18 @@ function renderTiles() {
   // Iterate over all tiles in game.tiles instead of the full grid
   const tilesheet1 = game.assets.tilesheet;
   const tilesheet2 = game.assets.tilesheet2;
+  const stoneBrickTilesheet = game.assets.stoneBrickTilesheet;
+  const plankTilesheet = game.assets.plankTilesheet;
   
   for (const tile of game.groundTiles) {
     const { x, y, type } = tile;
-    // Use tilesheet2 for ground, tilesheet1 for tile
-    const tilesheet = type === 'ground' ? tilesheet2 : tilesheet1;
+    // Select the appropriate tilesheet based on tile type
+    let tilesheet;
+    if (type === 'ground') tilesheet = tilesheet2;
+    else if (type === 'tile') tilesheet = tilesheet1;
+    else if (type === 'stone_brick') tilesheet = stoneBrickTilesheet;
+    else if (type === 'plank') tilesheet = plankTilesheet;
+    
     const useTilesheet = tilesheet && tilesheet.width > 0;
 
     const screenX = Math.round(x * TILE_SIZE - game.camera.x);
@@ -2082,38 +2971,91 @@ function renderEnemies() {
     // Only animate if active/close
     if (!enemy.active && !enemy.dead) return;
     
-    // Use global animation time for sync
-    let frame = Math.floor(game.animTime / (1000/frameRate)) % 2; 
+    const sprite = enemy.type === 'spike_enemy' ? game.assets.spikeEnemy : game.assets.enemyWalk;
+
+    // Use global animation time for sync; honor full sprite sheet width (16px per frame)
+    const frameCount = sprite && sprite.width ? Math.max(1, Math.floor(sprite.width / 16)) : 2;
+    let frame = Math.floor(game.animTime / (1000 / frameRate)) % frameCount;
 
     if (enemy.dead) {
-      frame = 1; // Use second frame for dead state
+      frame = Math.min(frameCount - 1, 1); // prefer second frame for dead, clamp to available frames
     }
     
     const screenX = Math.round(enemy.x - game.camera.x);
     const screenY = Math.round(enemy.y - game.camera.y);
     
-    if (game.assets.enemyWalk) {
-        ctx.save();
-        ctx.translate(screenX + enemy.width/2, screenY + enemy.height/2);
-        
-        // Sprite likely faces RIGHT by default.
-        // If moving LEFT (-1), FLIP it.
-        if (enemy.direction < 0) ctx.scale(-1, 1);
-        
-        // If dead, maybe flip vertically too? Optional. User just said "second frame... fall off".
-        if (enemy.dead) {
-            ctx.scale(1, -1); // Upside down fall? "fall off the map"
-        }
+    if (sprite) {
+      ctx.save();
+      ctx.translate(screenX + enemy.width / 2, screenY + enemy.height);
 
-        // Draw 16x16 sprite, offset up 1 pixel
-        // Offset by -8 to center, and -1 to move up
-        ctx.drawImage(game.assets.enemyWalk, frame * 16, 0, 16, 16, -8, -9, 16, 16);
-        ctx.restore();
+      if (enemy.invulnTimer > 0) {
+        ctx.globalAlpha = 0.6;
+      }
+      if (enemy.direction < 0) ctx.scale(-1, 1);
+      if (enemy.dead) ctx.scale(1, -1);
+
+      const frameHeight = enemy.type === 'spike_enemy' ? 20 : 16;
+      const destW = enemy.width;
+      const destH = enemy.height;
+      ctx.drawImage(sprite, frame * 16, 0, 16, frameHeight, -destW / 2, -destH, destW, destH);
+      ctx.restore();
     } else {
-        // Fallback
-        drawTile(ctx, 'enemy', screenX, screenY, TILE_SIZE);
+      drawTile(ctx, 'enemy', screenX, screenY, TILE_SIZE);
+    }
+
+    // Render enemy health pips when visible
+    if (game.assets.enemyHealth && enemy.healthDisplayTimer > 0 && !enemy.dead) {
+      const pipW = 6;
+      const pipH = 6;
+      const padding = -1;
+      const totalWidth = enemy.maxHealth * (pipW + padding) - padding;
+      const startX = Math.round(screenX + enemy.width / 2 - totalWidth / 2);
+      const startY = Math.round(screenY - pipH - 6);
+
+      const alpha = enemy.healthFadeTimer > 0 ? Math.max(0, enemy.healthFadeTimer / HEALTH_FADE_FRAMES) : 1;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      for (let i = 0; i < enemy.maxHealth; i++) {
+      const filled = i < enemy.health;
+      const frameX = filled ? 0 : 6;
+      ctx.drawImage(game.assets.enemyHealth, frameX, 0, pipW, pipH, startX + i * (pipW + padding), startY, pipW, pipH);
+      }
+      ctx.restore();
     }
   });
+}
+
+function renderBullets() {
+  const ctx = game.ctx;
+  
+  for (const bullet of game.bullets) {
+    const screenX = Math.round(bullet.x - game.camera.x);
+    const screenY = Math.round(bullet.y - game.camera.y);
+    
+    if (game.assets.bullet) {
+      ctx.save();
+      const centerX = screenX + bullet.width / 2;
+      const centerY = screenY + bullet.height / 2;
+      ctx.translate(centerX, centerY);
+      
+      // Rotate based on direction
+      if (bullet.dirY < 0) { // Up
+        ctx.rotate(-Math.PI / 2);
+      } else if (bullet.dirY > 0) { // Down
+        ctx.rotate(Math.PI / 2);
+      } else if (bullet.dirX < 0) { // Left
+        ctx.rotate(Math.PI);
+      }
+      // Right (dirX > 0) is default, no rotation needed
+      
+      ctx.drawImage(game.assets.bullet, 0, 0, 8, 8, -4, -4, 8, 8);
+      ctx.restore();
+    } else {
+      // Fallback
+      ctx.fillStyle = '#ffff00';
+      ctx.fillRect(screenX, screenY, bullet.width, bullet.height);
+    }
+  }
 }
 
 function renderPlayer() {
@@ -2131,12 +3073,11 @@ function renderPlayer() {
   if (p.dead) {
     sprite = game.assets.playerDie;
   } else if ((!p.onGround && ((p.touchingWallLeft && game.keys.left) || (p.touchingWallRight && game.keys.right))) || 
-             p.wallStickTimer > 0 || 
-             (p.wallCoyoteTimer > 0 && p.velY > 0)) {
+             p.wallStickTimer > 0) {
      sprite = game.assets.playerWallSlide;
      // Face towards the wall if sliding/clinging
-     if (p.touchingWallLeft || (p.wallCoyoteTimer > 0 && p.wallCoyoteDirection === -1)) flip = true;
-     if (p.touchingWallRight || (p.wallCoyoteTimer > 0 && p.wallCoyoteDirection === 1)) flip = false;
+     if (p.touchingWallLeft) flip = true;
+     if (p.touchingWallRight) flip = false;
   } else if (!p.onGround) {
     sprite = game.assets.playerJump;
     if (p.velY >= 0) frame = 1; // Fall
@@ -2180,6 +3121,37 @@ function renderPlayer() {
     ctx.fillStyle = '#212121';
     ctx.fillRect(screenX, screenY, p.width, p.height);
   }
+  
+  // Render bubble overlay if in bubble mode
+  if (p.bubbleMode && game.assets.bubble) {
+    ctx.save();
+    const cx = Math.floor(screenX + p.width / 2);
+    const cy = Math.floor(screenY + p.height / 2);
+    ctx.translate(cx, cy);
+    // Draw 32x32 bubble centered on player
+    ctx.drawImage(game.assets.bubble, 0, 0, 32, 32, -16, -16, 32, 32);
+    ctx.restore();
+  }
+  
+  // Render finger gun if in hand powerup mode (when not attacking)
+  if (p.handPowerupMode && game.assets.fingerGun && p.attackAnimTimer <= 0) {
+    ctx.save();
+    const cx = Math.floor(screenX + p.width / 2);
+    const cy = Math.floor(screenY + p.height / 2);
+    ctx.translate(cx, cy);
+    
+    // Position gun 16 pixels in the direction the player is facing
+    if (p.facing === -1) {
+      ctx.scale(-1, 1);
+      // When flipped, draw at 16 pixels (which becomes -16 after flip)
+      ctx.drawImage(game.assets.fingerGun, 0, 0, 16, 16, 16 - 8, -8, 16, 16);
+    } else {
+      // Facing right, draw at 16 pixels
+      ctx.drawImage(game.assets.fingerGun, 0, 0, 16, 16, 16 - 8, -8, 16, 16);
+    }
+    
+    ctx.restore();
+  }
 
   // Render health above the player
   if (game.assets.playerHealth && game.healthDisplayTimer > 0) {
@@ -2214,20 +3186,50 @@ function getCollidingTiles(entity, includeHazards = false) {
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       const key = `${x},${y}`;
-      const type = game.tiles[key];
+      const entry = game.tiles[key];
+      const { type, rotation } = parseTileEntry(entry);
       if (!type) continue;
+      const solid = isSolidTile(type);
       
       // For solid collision, skip non-solid tiles
-      if (!includeHazards && !isSolidTile(type)) continue;
+      if (!includeHazards && !solid) continue;
       // For hazard/goal detection, include everything when includeHazards is true
-      if (includeHazards || isSolidTile(type)) {
-        // Custom hitbox for goal: 3x40 pixels, centered horizontally, aligned to bottom
+      if (includeHazards || solid) {
+        // Custom hitbox for goal: 3x40 pixels (2.5 tiles tall), centered horizontally, aligned to bottom
         if (type === 'goal') {
           const goalX = x * TILE_SIZE + (TILE_SIZE - 3) / 2; // Center horizontally
-          const goalY = y * TILE_SIZE + TILE_SIZE - 40; // Align to bottom
-          tiles.push({ x: goalX, y: goalY, width: 3, height: 40, type });
+          const goalY = y * TILE_SIZE + TILE_SIZE - 40; // Align to bottom (40 pixels = 2.5 tiles)
+          tiles.push({ x: goalX, y: goalY, width: 3, height: 40, type, rotation: 0 });
         } else {
-          tiles.push({ x: x * TILE_SIZE, y: y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, type });
+          tiles.push({ x: x * TILE_SIZE, y: y * TILE_SIZE, width: TILE_SIZE, height: TILE_SIZE, type, rotation });
+        }
+      }
+    }
+  }
+  
+  // Additional check for goals that might be slightly outside the scan range
+  // (goal is 40px tall but anchored to a single grid tile)
+  if (includeHazards) {
+    const expandMinY = Math.max(0, minY - 2);
+    const expandMaxY = Math.min(game.levelHeight - 1, maxY + 2);
+    
+    for (let y = expandMinY; y <= expandMaxY; y++) {
+      // Skip already-scanned rows
+      if (y >= minY && y <= maxY) continue;
+      
+      for (let x = minX; x <= maxX; x++) {
+        const key = `${x},${y}`;
+        const entry = game.tiles[key];
+        const { type, rotation } = parseTileEntry(entry);
+        
+        if (type === 'goal') {
+          const goalX = x * TILE_SIZE + (TILE_SIZE - 3) / 2;
+          const goalY = y * TILE_SIZE + TILE_SIZE - 40;
+          const goalBox = { x: goalX, y: goalY, width: 3, height: 40, type, rotation: 0 };
+          // Only add if it actually intersects with the entity
+          if (rectsIntersect(entity, goalBox)) {
+            tiles.push(goalBox);
+          }
         }
       }
     }
@@ -2237,22 +3239,23 @@ function getCollidingTiles(entity, includeHazards = false) {
 }
 
 function isSolidTile(type) {
-  if (type === 'on_block') return game.switchState; // solid when ON
-  if (type === 'off_block') return !game.switchState; // solid when OFF
-  return type === 'ground' || type === 'tile';
+  // Standard mapping: switch ON makes on_block solid; switch OFF makes off_block solid
+  if (type === 'on_block') return game.switchState;
+  if (type === 'off_block') return !game.switchState;
+  return type === 'ground' || type === 'tile' || type === 'stone_brick' || type === 'plank';
 }
 
 function isSolidAt(px, py) {
   const x = Math.floor(px / TILE_SIZE);
   const y = Math.floor(py / TILE_SIZE);
-  const type = game.tiles[`${x},${y}`];
+  const { type } = parseTileEntry(game.tiles[`${x},${y}`]);
   return isSolidTile(type);
 }
 
 function isSpikeAt(px, py) {
   const x = Math.floor(px / TILE_SIZE);
   const y = Math.floor(py / TILE_SIZE);
-  const type = game.tiles[`${x},${y}`];
+  const { type } = parseTileEntry(game.tiles[`${x},${y}`]);
   return type === 'spike';
 }
 
@@ -2264,32 +3267,78 @@ function rectsIntersect(a, b) {
 }
 
 function spikeIntersect(rect, tile) {
-  const tx = tile.x;
-  const ty = tile.y;
-  
-  // Rect relative to Tile
-  const rx = rect.x - tx;
-  const ry = rect.y - ty;
-  const rw = rect.width;
-  const rh = rect.height;
+  const rotation = normalizeRotation(tile.rotation || 0);
+  const triangle = getSpikeTriangle(tile.x, tile.y, rotation);
+  return polygonIntersectsRect(triangle, rect);
+}
 
-  // 1. Precise Bounding Box Check (Triangle width 14px, height 16px)
-  // X range: [1, 15], Y range: [0, 16]
-  if (rx > 15 || rx + rw < 1 || ry > 16 || ry + rh < 0) return false;
+const SPIKE_TRIANGLE = [
+  { x: 8, y: 0 },
+  { x: 1, y: 16 },
+  { x: 15, y: 16 }
+];
 
-  // 2. Left Slope Separation Check (P1-P2 Edge)
-  // Triangle is to the right/down of line 16x + 7y = 128
-  // If entire rect is left/up (value < 128), no collision.
-  // Maximize 16x + 7y (Bottom-Right corner)
-  if (16 * (rx + rw) + 7 * (ry + rh) < 128) return false;
+const SPIKE_ROT_CENTER = { x: 8, y: 8 };
 
-  // 3. Right Slope Separation Check (P2-P3 Edge)
-  // Triangle is to the left/down of line 16x - 7y = 128
-  // If entire rect is right/up (value > 128), no collision.
-  // Minimize 16x - 7y (Bottom-Left corner)
-  if (16 * rx - 7 * (ry + rh) > 128) return false;
+function getSpikeTriangle(tx, ty, rotation) {
+  const rad = (rotation * Math.PI) / 180;
+  return SPIKE_TRIANGLE.map(p => rotatePoint(p, SPIKE_ROT_CENTER, rad)).map(p => ({ x: p.x + tx, y: p.y + ty }));
+}
 
+function rotatePoint(point, center, rad) {
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos
+  };
+}
+
+function polygonIntersectsRect(polygon, rect) {
+  const rectPoly = [
+    { x: rect.x, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y },
+    { x: rect.x + rect.width, y: rect.y + rect.height },
+    { x: rect.x, y: rect.y + rect.height }
+  ];
+
+  return polygonsOverlap(polygon, rectPoly);
+}
+
+function polygonsOverlap(a, b) {
+  const axes = [...getAxes(a), ...getAxes(b)];
+  for (const axis of axes) {
+    const projA = projectPolygon(a, axis);
+    const projB = projectPolygon(b, axis);
+    if (projA.max < projB.min || projB.max < projA.min) return false;
+  }
   return true;
+}
+
+function getAxes(poly) {
+  const axes = [];
+  for (let i = 0; i < poly.length; i++) {
+    const p1 = poly[i];
+    const p2 = poly[(i + 1) % poly.length];
+    const edge = { x: p2.x - p1.x, y: p2.y - p1.y };
+    const normal = { x: -edge.y, y: edge.x };
+    const len = Math.hypot(normal.x, normal.y) || 1;
+    axes.push({ x: normal.x / len, y: normal.y / len });
+  }
+  return axes;
+}
+
+function projectPolygon(poly, axis) {
+  let min = poly[0].x * axis.x + poly[0].y * axis.y;
+  let max = min;
+  for (let i = 1; i < poly.length; i++) {
+    const proj = poly[i].x * axis.x + poly[i].y * axis.y;
+    if (proj < min) min = proj;
+    if (proj > max) max = proj;
+  }
+  return { min, max };
 }
 
 function clamp(value, min, max) {
@@ -2608,6 +3657,45 @@ function pauseGame() {
 
 function resumeGame() {
   game.paused = false;
+  game.waitingForFirstInput = false;
+  
+  // Clear all input states to prevent button presses from transferring to gameplay
+  game.keys.jumpPressed = false;
+  game.keys.attackPressed = false;
+  
+  // Clear keyboard state
+  game.keyboard.left = false;
+  game.keyboard.right = false;
+  game.keyboard.up = false;
+  game.keyboard.down = false;
+  game.keyboard.jump = false;
+  game.keyboard.attack = false;
+  
+  // Clear gamepad state
+  game.gamepad.state = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+  
+  // Sync gamepad prevButtons with current state to prevent button bleed-through
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let pad = null;
+  for (const p of pads) {
+    if (p) {
+      pad = p;
+      break;
+    }
+  }
+  
+  if (pad && pad.buttons) {
+    // Store actual current button state so next poll won't see them as "new" presses
+    game.gamepad.prevButtons = pad.buttons.map(b => {
+      if (!b) return false;
+      if (b.pressed !== undefined) return b.pressed;
+      if (typeof b.value === 'number') return b.value > 0.5;
+      return false;
+    });
+  }
+  
+  // Update combined input state to reflect cleared inputs
+  updateCombinedInputState();
   
   // If this is the very first start
   if (!game.started) {
@@ -2726,8 +3814,8 @@ function createPauseMenu() {
   const likeBox = document.createElement('div');
   likeBox.innerHTML = `
     <div style="font-size: 12px; color: #757575;">Likes</div>
-    <div style="display: flex; align-items: center; gap: 8px;">
-        <svg fill="#4caf50" height="16px" width="16px" version="1.1" id="Capa_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 487.622 487.622" xml:space="preserve"><g><path d="M473.079,228.694l-89.967-89.967c-17.391-17.391-41.566-24.647-65.047-21.758c1.372-4.102,2.355-8.243,2.946-12.428 l10.82-76.657c3.961-28.056-5.06-56.124-24.167-75.231C288.587-16.425,258.113-24.234,228.17,31.79l-43.085,80.707 c-22.129,41.442-70.264,65.372-117.262,60.89v26.046c43.435,0,78.784,35.349,78.783,78.784v27.915 c0,43.434-35.349,78.784-78.783,78.784v70.814h106.012l275.601-52.553C472.19,398.665,487.893,379.25,487.58,356.18 l-2.618-100.95C484.706,243.619,480.016,235.631,473.079,228.694z M397.773,353.945l-221.785,42.292 c-0.655,0.125-1.328,0.191-2.007,0.191c-1.332,0-2.656-0.252-3.924-0.742c-2.486-0.961-4.639-2.67-6.196-4.918l-12.353-17.844 c-8.084-11.678-20.849-19.166-35.034-20.697l0.188-164.845c22.518-2.607,43.084-13.882,56.761-31.543l35.865-67.185 c20.941-39.182,34.42-30.824,37.362-27.882c9.641,9.642,14.192,23.804,12.193,37.957l-10.82,76.657 c-2.434,17.24,5.497,34.809,20.485,44.97c14.989,10.161,34.408,10.806,50.142,1.383l109.916,109.916 c7.843,7.843,8.74,20.725,1.967,29.743c-33.197,44.209,1.492,67.63,13.623,73.136c7.091,3.218,12.871,9.25,16.273,16.401 C464.385,357.755,417.89,350.109,397.773,353.945z"/></g></svg>
+    <div style="display: flex; align-items: center; gap: 8px; justify-content: center;">
+        <svg class="icon" style="width: 16px; height: 16px; fill: #4caf50;"><use href="icons.svg#icon-thumb-up"/></svg>
         <span id="pauseLikes" style="font-weight: bold; font-size: 18px;">0</span>
     </div>
   `;

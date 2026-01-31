@@ -24,9 +24,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   
   const pathname = window.location.pathname;
   const isLoginPage = pathname.endsWith('/login') || pathname === '/login';
-  const isDiscoverPage = pathname === '/' || pathname.endsWith('/discover');
   
-  if (!user && !isLoginPage && !isDiscoverPage) {
+  // Redirect to login if not authenticated (except when already on login page)
+  if (!user && !isLoginPage) {
     window.location.href = '/login';
     return;
   }

@@ -210,31 +210,64 @@ router.put('/:id/controls', async (req, res) => {
       return res.status(403).json({ error: 'You can only update your own controls' });
     }
 
-    // Validate control scheme structure
+    // Validate control scheme structure (support legacy flat shape and new keyboard/gamepad shape)
     const requiredKeys = ['left', 'right', 'up', 'down', 'jump', 'attack'];
+    const validKeyPattern = /^(Arrow(Left|Right|Up|Down)|Space|[A-Za-z0-9_]+)$/;
+    const defaultKeyboard = {
+      left: 'ArrowLeft',
+      right: 'ArrowRight',
+      up: 'ArrowUp',
+      down: 'ArrowDown',
+      jump: 'ArrowUp',
+      attack: 'Space'
+    };
+    const defaultGamepad = {
+      dpadLeft: 14,
+      dpadRight: 15,
+      dpadUp: 12,
+      dpadDown: 13,
+      buttonJump: 0,
+      buttonAttack: 7
+    };
+
     if (!control_scheme || typeof control_scheme !== 'object') {
       return res.status(400).json({ error: 'Invalid control scheme' });
     }
 
-    // Validate each control key exists and is a valid key code
-    const validKeyPattern = /^[A-Za-z0-9]+$/;
+    // Normalize to new shape
+    let normalizedScheme = {};
+    
+    if (control_scheme.keyboard) {
+      // New shape with keyboard/gamepad
+      normalizedScheme.keyboard = { ...defaultKeyboard, ...control_scheme.keyboard };
+      normalizedScheme.gamepad = { ...defaultGamepad, ...(control_scheme.gamepad || {}) };
+    } else {
+      // Legacy flat shape
+      normalizedScheme.keyboard = { ...defaultKeyboard, ...control_scheme };
+      normalizedScheme.gamepad = defaultGamepad;
+    }
+
+    // Validate keyboard controls
     for (const key of requiredKeys) {
-      if (!control_scheme[key]) {
-        return res.status(400).json({ 
-          error: `Missing required control: ${key}` 
-        });
+      const value = normalizedScheme.keyboard[key];
+      if (!value || typeof value !== 'string') {
+        return res.status(400).json({ error: `Missing or invalid control: ${key}` });
       }
-      if (typeof control_scheme[key] !== 'string' || !validKeyPattern.test(control_scheme[key])) {
-        return res.status(400).json({ 
-          error: `Invalid key code for ${key}. Must be alphanumeric.` 
-        });
+    }
+
+    // Validate gamepad controls
+    const requiredButtons = ['dpadLeft', 'dpadRight', 'dpadUp', 'dpadDown', 'buttonJump', 'buttonAttack'];
+    for (const key of requiredButtons) {
+      const value = normalizedScheme.gamepad[key];
+      if (typeof value !== 'number' || value < 0 || value > 31) {
+        return res.status(400).json({ error: `Invalid gamepad mapping for ${key}` });
       }
     }
 
     // Update the control scheme
     const result = await db.query(
       'UPDATE users SET control_scheme = $1 WHERE id = $2 RETURNING control_scheme',
-      [JSON.stringify(control_scheme), id]
+      [JSON.stringify(normalizedScheme), id]
     );
 
     res.json({
@@ -300,6 +333,40 @@ router.put('/:id/username', async (req, res) => {
     });
   } catch (err) {
     console.error('Error updating username:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update vibration preference
+router.put('/:id/vibrations', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { id } = req.params;
+    const { vibrations_enabled } = req.body;
+
+    // Check if user is updating their own profile
+    if (req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'You can only update your own settings' });
+    }
+
+    if (typeof vibrations_enabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid vibration preference' });
+    }
+
+    const result = await db.query(
+      'UPDATE users SET vibrations_enabled = $1 WHERE id = $2 RETURNING vibrations_enabled',
+      [vibrations_enabled, id]
+    );
+
+    res.json({
+      message: 'Vibration preference updated successfully',
+      vibrations_enabled: result.rows[0].vibrations_enabled
+    });
+  } catch (err) {
+    console.error('Error updating vibration preference:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

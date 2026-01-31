@@ -64,18 +64,28 @@ const editor = {
   mouseY: 0,
   thumbnailMode: false,
   capturingThumbnail: false,
+  hotbar: ['ground', 'tile', 'enemy', 'spike', 'spawn', 'goal', 'coin', 'diamond'],
+  hotbarSlots: 8,
+  selectedSlot: 0,
+  inventoryOpen: false,
+  currentCategory: 'terrain',
   assets: {
     tilesheet: null,
     tilesheet2: null,
+    stoneBrickTilesheet: null,
+    plankTilesheet: null,
     spike: null,
     coin: null,
     token: null,
     health: null,
     surpriseToken: null,
+    bubblePowerup: null,
+    handPowerup: null,
     onBlock: null,
     offBlock: null,
     onoffSwitch: null,
     enemyWalk: null,
+    spikeEnemy: null,
     playerIdle: null,
     goal: null,
     bgNight1: null,
@@ -90,19 +100,100 @@ const editor = {
 
 let deleteConfirmResolver = null;
 
+const ROTATABLE_TILES = new Set(['spike']);
+const DEFAULT_SWITCH_STATE = false;
+
+function isRotatableTile(type) {
+  return ROTATABLE_TILES.has(type);
+}
+
+function normalizeRotation(rot) {
+  const step = Math.round((Number(rot) || 0) / 90) % 4;
+  return ((step + 4) % 4) * 90;
+}
+
+function parseTileEntry(tile) {
+  if (typeof tile === 'string') return { type: tile, rotation: 0 };
+  if (tile && typeof tile === 'object') {
+    return {
+      type: tile.type || '',
+      rotation: normalizeRotation(tile.rotation)
+    };
+  }
+  return { type: '', rotation: 0 };
+}
+
+function buildTileValue(type, rotation = 0) {
+  return isRotatableTile(type) ? { type, rotation: normalizeRotation(rotation) } : type;
+}
+
+function normalizeTiles(rawTiles) {
+  const normalized = {};
+  Object.entries(rawTiles || {}).forEach(([key, value]) => {
+    const info = parseTileEntry(value);
+    if (!info.type) return;
+    normalized[key] = buildTileValue(info.type, info.rotation);
+  });
+  return normalized;
+}
+
+function isAttachableTile(type) {
+  // Tiles that can support spikes
+  return type === 'ground' || type === 'tile' || type === 'stone_brick' || type === 'plank' || type === 'on_block' || type === 'off_block';
+}
+
+function computeSpikeRotation(gridX, gridY) {
+  // Cursor world position (unscaled)
+  const cursorWorldX = (editor.mouseX + editor.cameraX) / editor.zoom;
+  const cursorWorldY = (editor.mouseY + editor.cameraY) / editor.zoom;
+
+  const neighbors = [
+    { dx: 0, dy: -1, rot: 180 }, // tile above -> point down
+    { dx: 1, dy: 0, rot: 270 },  // tile right -> point left
+    { dx: 0, dy: 1, rot: 0 },    // tile below -> point up
+    { dx: -1, dy: 0, rot: 90 }   // tile left -> point right
+  ];
+
+  const candidates = [];
+
+  neighbors.forEach(n => {
+    const nx = gridX + n.dx;
+    const ny = gridY + n.dy;
+    if (nx < 0 || ny < 0 || nx >= editor.gridWidth || ny >= editor.gridHeight) return;
+    const key = `${nx},${ny}`;
+    const tile = parseTileEntry(editor.levelData[key]);
+    if (!isAttachableTile(tile.type)) return;
+
+    const centerX = (nx + 0.5) * editor.tileSize;
+    const centerY = (ny + 0.5) * editor.tileSize;
+    const distSq = Math.pow(centerX - cursorWorldX, 2) + Math.pow(centerY - cursorWorldY, 2);
+    candidates.push({ rot: n.rot, distSq });
+  });
+
+  if (!candidates.length) return null;
+
+  candidates.sort((a, b) => a.distSq - b.distSq);
+  return candidates[0].rot;
+}
+
 function loadEditorAssets() {
   return Promise.all([
     loadEditorImage('graphics/tilesheet_1.png').then(img => editor.assets.tilesheet = img),
     loadEditorImage('graphics/tilesheet_2.png').then(img => editor.assets.tilesheet2 = img),
+    loadEditorImage('graphics/stone_brick_tilesheet.png').then(img => editor.assets.stoneBrickTilesheet = img),
+    loadEditorImage('graphics/plank_tilesheet.png').then(img => editor.assets.plankTilesheet = img),
     loadEditorImage('graphics/spike.png').then(img => editor.assets.spike = img),
     loadEditorImage('graphics/coin.png').then(img => editor.assets.coin = img),
     loadEditorImage('graphics/token.png').then(img => editor.assets.token = img),
     loadEditorImage('graphics/health_token.png').then(img => editor.assets.health = img),
     loadEditorImage('graphics/surprise_token.png').then(img => editor.assets.surpriseToken = img),
+    loadEditorImage('graphics/bubble_powerup.png').then(img => editor.assets.bubblePowerup = img),
+    loadEditorImage('graphics/hand_powerup.png').then(img => editor.assets.handPowerup = img),
     loadEditorImage('graphics/on_block.png').then(img => editor.assets.onBlock = img),
     loadEditorImage('graphics/off_block.png').then(img => editor.assets.offBlock = img),
     loadEditorImage('graphics/onoff_switch.png').then(img => editor.assets.onoffSwitch = img),
     loadEditorImage('graphics/enemy1_walk.png').then(img => editor.assets.enemyWalk = img),
+    loadEditorImage('graphics/spike_enemy.png').then(img => editor.assets.spikeEnemy = img),
     loadEditorImage('graphics/player_idle.png').then(img => editor.assets.playerIdle = img),
     loadEditorImage('graphics/bgs/night/layer_1.png').then(img => editor.assets.bgNight1 = img),
     loadEditorImage('graphics/bgs/night/layer_2.png').then(img => editor.assets.bgNight2 = img),
@@ -140,6 +231,18 @@ function renderToolbarPreviews() {
   const tileCanvas = document.getElementById('preview-tile');
   if (tileCanvas && editor.assets.tilesheet) {
     renderTilePreview(tileCanvas, editor.assets.tilesheet);
+  }
+  
+  // Render stone_brick preview
+  const stoneBrickCanvas = document.getElementById('preview-stone_brick');
+  if (stoneBrickCanvas && editor.assets.stoneBrickTilesheet) {
+    renderTilePreview(stoneBrickCanvas, editor.assets.stoneBrickTilesheet);
+  }
+  
+  // Render plank preview
+  const plankCanvas = document.getElementById('preview-plank');
+  if (plankCanvas && editor.assets.plankTilesheet) {
+    renderTilePreview(plankCanvas, editor.assets.plankTilesheet);
   }
 }
 
@@ -250,7 +353,9 @@ function initEditor() {
   loadEditorAssets().then(() => {
     loadMusicList(); // Fetch available music
     setupBackgroundSelect();
-    renderToolbarPreviews();
+    // Re-render hotbar and inventory after assets load
+    renderHotbar();
+    renderInventory();
     return loadUserDrafts();
   }).then(() => {
     // Create a new draft or load existing one
@@ -347,19 +452,367 @@ function updateDefaultZoom() {
   clampCamera();
 }
 
-// Setup tile selector buttons
-function setupTileSelector() {
+// Tile categories for inventory
+const TILE_CATEGORIES = {
+  terrain: ['ground', 'tile', 'stone_brick', 'plank'],
+  entities: ['enemy', 'spike_enemy', 'spike'],
+  items: ['coin', 'diamond', 'health', 'surprise_token', 'bubble_powerup', 'hand_powerup'],
+  special: ['spawn', 'goal', 'on_block', 'off_block', 'onoff_switch']
+};
+
+const TILE_INFO = {
+  ground: { name: 'Ground', category: 'terrain', canvas: true },
+  tile: { name: 'Tile', category: 'terrain', canvas: true },
+  stone_brick: { name: 'Stone Brick', category: 'terrain', canvas: true },
+  plank: { name: 'Plank', category: 'terrain', canvas: true },
+  enemy: { name: 'Enemy', category: 'entities', img: 'graphics/enemy1_walk.png' },
+  spike_enemy: { name: 'Spike Enemy', category: 'entities', img: 'graphics/spike_enemy.png' },
+  spike: { name: 'Spike', category: 'entities', img: 'graphics/spike.png' },
+  spawn: { name: 'Spawn Point', category: 'special', img: 'graphics/player_idle.png' },
+  goal: { name: 'Goal', category: 'special', img: 'graphics/goal.png' },
+  coin: { name: 'Coin', category: 'items', img: 'graphics/coin.png' },
+  diamond: { name: 'Diamond', category: 'items', img: 'graphics/token.png' },
+  health: { name: 'Health', category: 'items', img: 'graphics/health_token.png' },
+  surprise_token: { name: 'Surprise Token', category: 'items', img: 'graphics/surprise_token.png' },
+  bubble_powerup: { name: 'Bubble Powerup', category: 'items', img: 'graphics/bubble_powerup.png' },
+  hand_powerup: { name: 'Hand Powerup', category: 'items', img: 'graphics/hand_powerup.png' },
+  on_block: { name: 'On Block', category: 'special', img: 'graphics/on_block.png' },
+  off_block: { name: 'Off Block', category: 'special', img: 'graphics/off_block.png' },
+  onoff_switch: { name: 'On/Off Switch', category: 'special', img: 'graphics/onoff_switch.png' }
+};
+
+// Calculate responsive hotbar slots
+function calculateHotbarSlots() {
+  const hotbar = document.getElementById('tileHotbar');
+  if (!hotbar) return 8;
+  
+  const availableWidth = hotbar.offsetWidth;
+  const slotWidth = 56; // 48px button + 8px gap
+  const maxSlots = Math.floor(availableWidth / slotWidth);
+  
+  return Math.max(6, Math.min(24, maxSlots));
+}
+
+// Update hotbar slots based on window size
+function updateHotbarSlots() {
+  const newSlotCount = calculateHotbarSlots();
+  if (newSlotCount !== editor.hotbarSlots) {
+    editor.hotbarSlots = newSlotCount;
+    renderHotbar();
+  }
+}
+
+// Render hotbar with current slots
+function renderHotbar() {
+  const hotbar = document.getElementById('tileHotbar');
+  if (!hotbar) return;
+  
+  hotbar.innerHTML = '';
+  
+  for (let i = 0; i < editor.hotbarSlots; i++) {
+    const tile = editor.hotbar[i];
+    const btn = document.createElement('button');
+    btn.className = 'tile-btn';
+    btn.dataset.slot = i;
+    
+    if (tile) {
+      btn.dataset.tile = tile;
+      btn.title = TILE_INFO[tile]?.name || tile;
+      
+      const info = TILE_INFO[tile];
+      if (info?.canvas) {
+        const canvas = document.createElement('canvas');
+        canvas.className = 'tile-preview-canvas';
+        canvas.width = 32;
+        canvas.height = 32;
+        canvas.id = `preview-hotbar-${tile}-${i}`;
+        btn.appendChild(canvas);
+      } else if (info?.img) {
+        const preview = document.createElement('div');
+        preview.className = 'tile-preview';
+        const img = document.createElement('img');
+        img.src = info.img;
+        img.alt = info.name;
+        img.className = 'tile-img';
+        preview.appendChild(img);
+        btn.appendChild(preview);
+      }
+      
+      if (editor.selectedTile === tile && editor.selectedSlot === i) {
+        btn.classList.add('active');
+      }
+    } else {
+      btn.classList.add('empty');
+      btn.title = 'Empty Slot (drag tile here)';
+    }
+    
+    // Click to select
+    btn.addEventListener('click', () => {
+      if (tile) {
+        selectTileFromSlot(tile, i);
+      }
+    });
+    
+    // Drop target
+    btn.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      btn.classList.add('drop-target');
+    });
+    
+    btn.addEventListener('dragleave', () => {
+      btn.classList.remove('drop-target');
+    });
+    
+    btn.addEventListener('drop', (e) => {
+      e.preventDefault();
+      btn.classList.remove('drop-target');
+      const draggedTile = e.dataTransfer.getData('text/plain');
+      if (draggedTile) {
+        editor.hotbar[i] = draggedTile;
+        saveHotbar();
+        renderHotbar();
+        renderInventory();
+      }
+    });
+    
+    hotbar.appendChild(btn);
+  }
+  
+  // Render canvas previews
+  if (editor.assetsLoaded) {
+    for (let i = 0; i < editor.hotbarSlots; i++) {
+      const tile = editor.hotbar[i];
+      if (tile && TILE_INFO[tile]?.canvas) {
+        const canvas = document.getElementById(`preview-hotbar-${tile}-${i}`);
+        if (canvas) {
+          // Select the appropriate tilesheet based on tile type
+          let sheet;
+          if (tile === 'ground') sheet = editor.assets.tilesheet2;
+          else if (tile === 'tile') sheet = editor.assets.tilesheet;
+          else if (tile === 'stone_brick') sheet = editor.assets.stoneBrickTilesheet;
+          else if (tile === 'plank') sheet = editor.assets.plankTilesheet;
+          
+          if (sheet) {
+            renderTilePreview(canvas, sheet);
+          }
+        }
+      }
+    }
+  }
+}
+
+// Select a tile from a specific hotbar slot
+function selectTileFromSlot(tile, slotIndex) {
+  editor.selectedTile = tile;
+  editor.selectedSlot = slotIndex;
   const tileBtns = document.querySelectorAll('.tile-btn');
   tileBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      tileBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.remove('active');
+    if (btn.dataset.slot == slotIndex) {
       btn.classList.add('active');
-      editor.selectedTile = btn.dataset.tile;
+    }
+  });
+  render();
+}
+
+// Select a tile (legacy support)
+function selectTile(tile) {
+  editor.selectedTile = tile;
+  // Find first occurrence in hotbar
+  const slotIndex = editor.hotbar.indexOf(tile);
+  if (slotIndex !== -1) {
+    editor.selectedSlot = slotIndex;
+  }
+  const tileBtns = document.querySelectorAll('.tile-btn');
+  tileBtns.forEach(btn => {
+    btn.classList.remove('active');
+    if (btn.dataset.slot == editor.selectedSlot) {
+      btn.classList.add('active');
+    }
+  });
+  render();
+}
+
+// Render inventory grid
+function renderInventory() {
+  const grid = document.getElementById('inventoryGrid');
+  if (!grid) return;
+  
+  grid.innerHTML = '';
+  const tiles = TILE_CATEGORIES[editor.currentCategory] || [];
+  
+  tiles.forEach(tile => {
+    const info = TILE_INFO[tile];
+    if (!info) return;
+    
+    const btn = document.createElement('div');
+    btn.className = 'inventory-tile';
+    btn.dataset.tile = tile;
+    btn.title = info.name;
+    btn.draggable = true;
+    
+    // Check if already in hotbar
+    if (editor.hotbar.includes(tile)) {
+      btn.style.opacity = '0.5';
+    }
+    
+    if (info.canvas) {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'tile-preview-canvas';
+      canvas.width = 32;
+      canvas.height = 32;
+      canvas.id = `preview-inv-${tile}`;
+      btn.appendChild(canvas);
+    } else if (info.img) {
+      const preview = document.createElement('div');
+      preview.className = 'tile-preview';
+      const img = document.createElement('img');
+      img.src = info.img;
+      img.alt = info.name;
+      img.className = 'tile-img';
+      preview.appendChild(img);
+      btn.appendChild(preview);
+    }
+    
+    // Drag start
+    btn.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', tile);
+      btn.classList.add('dragging');
+      
+      // Create a custom drag image at proper size
+      const dragImg = btn.cloneNode(true);
+      dragImg.style.position = 'absolute';
+      dragImg.style.top = '-1000px';
+      dragImg.style.width = '48px';
+      dragImg.style.height = '48px';
+      document.body.appendChild(dragImg);
+      e.dataTransfer.setDragImage(dragImg, 24, 24);
+      
+      // Remove the clone after drag starts
+      setTimeout(() => document.body.removeChild(dragImg), 0);
+    });
+    
+    btn.addEventListener('dragend', () => {
+      btn.classList.remove('dragging');
+    });
+    
+    // Click to add to first empty slot
+    btn.addEventListener('click', () => {
+      const emptyIndex = editor.hotbar.findIndex(t => !t);
+      if (emptyIndex !== -1) {
+        editor.hotbar[emptyIndex] = tile;
+        saveHotbar();
+        renderHotbar();
+        renderInventory();
+      } else {
+        selectTile(tile);
+      }
+    });
+    
+    grid.appendChild(btn);
+  });
+  
+  // Render canvas previews
+  if (editor.assetsLoaded) {
+    tiles.forEach(tile => {
+      if (TILE_INFO[tile]?.canvas) {
+        const canvas = document.getElementById(`preview-inv-${tile}`);
+        if (canvas) {
+          // Select the appropriate tilesheet based on tile type
+          let sheet;
+          if (tile === 'ground') sheet = editor.assets.tilesheet2;
+          else if (tile === 'tile') sheet = editor.assets.tilesheet;
+          else if (tile === 'stone_brick') sheet = editor.assets.stoneBrickTilesheet;
+          else if (tile === 'plank') sheet = editor.assets.plankTilesheet;
+          
+          if (sheet) {
+            renderTilePreview(canvas, sheet);
+          }
+        }
+      }
+    });
+  }
+}
+
+// Toggle inventory panel
+function toggleInventory() {
+  editor.inventoryOpen = !editor.inventoryOpen;
+  const panel = document.getElementById('inventoryPanel');
+  const toggleBtn = document.getElementById('inventoryToggleBtn');
+  
+  if (editor.inventoryOpen) {
+    panel.classList.add('open');
+    toggleBtn.classList.add('open');
+  } else {
+    panel.classList.remove('open');
+    toggleBtn.classList.remove('open');
+  }
+}
+
+// Setup inventory
+function setupInventory() {
+  const toggleBtn = document.getElementById('inventoryToggleBtn');
+  const closeBtn = document.getElementById('inventoryCloseBtn');
+  const tabs = document.querySelectorAll('.inventory-tab');
+  
+  toggleBtn?.addEventListener('click', toggleInventory);
+  closeBtn?.addEventListener('click', toggleInventory);
+  
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      editor.currentCategory = tab.dataset.category;
+      renderInventory();
     });
   });
   
-  // Set first tile as active
-  tileBtns[0]?.classList.add('active');
+  // Load saved hotbar or use defaults
+  loadHotbar();
+  renderHotbar();
+  renderInventory();
+  
+  // Update slots on resize
+  window.addEventListener('resize', updateHotbarSlots);
+  
+  // Recalculate slots after DOM is fully loaded and sized
+  setTimeout(() => {
+    updateHotbarSlots();
+  }, 100);
+}
+
+// Save hotbar to localStorage and mark level as having unsaved changes
+function saveHotbar() {
+  // Save to localStorage as "last used" hotbar
+  localStorage.setItem('editorHotbar', JSON.stringify(editor.hotbar));
+  // Mark level as having unsaved changes so hotbar saves with draft
+  editor.hasUnsavedChanges = true;
+}
+
+// Load hotbar from localStorage
+function loadHotbar() {
+  const saved = localStorage.getItem('editorHotbar');
+  if (saved) {
+    try {
+      const loaded = JSON.parse(saved);
+      // Validate that it's an array with valid tiles
+      if (Array.isArray(loaded) && loaded.length > 0) {
+        editor.hotbar = loaded;
+      }
+    } catch (e) {
+      console.error('Failed to load hotbar:', e);
+    }
+  }
+  
+  // Ensure hotbar has at least the default length
+  while (editor.hotbar.length < 8) {
+    editor.hotbar.push(null);
+  }
+}
+
+// Setup tile selector buttons (legacy support - now calls setupInventory)
+function setupTileSelector() {
+  setupInventory();
 }
 
 // Handle mouse down
@@ -468,17 +921,17 @@ function placeTile() {
   }
   
   const key = `${gridX},${gridY}`;
+  const existing = parseTileEntry(editor.levelData[key]);
   
   // Only update if change actually happens to avoid setting flag unnecessarily
   let changed = false;
 
   // Right click (button 2) removes tiles
   if (editor.dragButton === 2) {
-    if (editor.levelData[key]) {
-      const tileType = editor.levelData[key];
-      if (tileType === 'spawn') {
+    if (existing.type) {
+      if (existing.type === 'spawn') {
         editor.spawnPosition = null;
-      } else if (tileType === 'goal') {
+      } else if (existing.type === 'goal') {
         editor.goalPosition = null;
       }
       delete editor.levelData[key];
@@ -486,23 +939,98 @@ function placeTile() {
     }
   } else {
     // Left click places tiles
-    // Avoid re-placing same tile
-    if (editor.levelData[key] !== editor.selectedTile) {
+    if (editor.selectedTile === 'spike' && existing.type) {
+      // Don't place spikes on top of existing tiles
+      return;
+    }
+    
+    // Don't place tiles directly above spike enemies (they're 2 tiles tall)
+    const belowKey = `${gridX},${gridY + 1}`;
+    const below = parseTileEntry(editor.levelData[belowKey]);
+    if (below.type === 'spike_enemy') {
+      // Can't place anything above a spike enemy
+      return;
+    }
+    
+    // Don't place spike enemies if there's a tile directly above
+    if (editor.selectedTile === 'spike_enemy') {
+      const aboveKey = `${gridX},${gridY - 1}`;
+      const above = parseTileEntry(editor.levelData[aboveKey]);
+      if (above.type) {
+        // Can't place spike enemy if there's something above
+        return;
+      }
+    }
+    
+    // Don't place tiles above goal (goal is 2.5 tiles tall across 2 columns)
+    // Check if there's a goal below in column 0 or column 1
+    const below1Key = `${gridX},${gridY + 1}`;
+    const below2Key = `${gridX},${gridY + 2}`;
+    const below1Left = `${gridX - 1},${gridY + 1}`;
+    const below2Left = `${gridX - 1},${gridY + 2}`;
+    
+    const below1 = parseTileEntry(editor.levelData[below1Key]);
+    const below2 = parseTileEntry(editor.levelData[below2Key]);
+    const below1LeftTile = parseTileEntry(editor.levelData[below1Left]);
+    const below2LeftTile = parseTileEntry(editor.levelData[below2Left]);
+    
+    // Can't place if goal is 1 or 2 tiles below (column 0)
+    if (below1.type === 'goal' || below2.type === 'goal') {
+      return;
+    }
+    // Can't place if goal is 1 or 2 tiles below and 1 to the left (column 1)
+    if (below1LeftTile.type === 'goal' || below2LeftTile.type === 'goal') {
+      return;
+    }
+    
+    // Don't place goal if there are tiles in the 4 spaces above (2 rows x 2 columns)
+    if (editor.selectedTile === 'goal') {
+      const blockedPositions = [
+        `${gridX},${gridY - 1}`,     // directly above, row 1
+        `${gridX},${gridY - 2}`,     // directly above, row 2
+        `${gridX + 1},${gridY - 1}`, // right and above, row 1
+        `${gridX + 1},${gridY - 2}`  // right and above, row 2
+      ];
+      
+      for (const pos of blockedPositions) {
+        const tile = parseTileEntry(editor.levelData[pos]);
+        if (tile.type) {
+          // Can't place goal if any of these positions are occupied
+          return;
+        }
+      }
+    }
+
+    // Auto-rotate spikes toward supporting tile
+    let targetRotation = 0;
+    if (editor.selectedTile === 'spike') {
+      const rot = computeSpikeRotation(gridX, gridY);
+      if (rot === null) {
+        // Spikes must be attached to a solid tile
+        return;
+      }
+      targetRotation = rot;
+    }
+
+    const targetValue = buildTileValue(editor.selectedTile, targetRotation);
+    const targetInfo = parseTileEntry(targetValue);
+
+    if (existing.type !== targetInfo.type || existing.rotation !== targetInfo.rotation) {
       // Special handling for spawn and goal - only one allowed
-      if (editor.selectedTile === 'spawn') {
+      if (targetInfo.type === 'spawn') {
         // Remove existing spawn
         if (editor.spawnPosition && editor.spawnPosition !== key) {
           delete editor.levelData[editor.spawnPosition];
         }
         editor.spawnPosition = key;
-      } else if (editor.selectedTile === 'goal') {
+      } else if (targetInfo.type === 'goal') {
         // Remove existing goal
         if (editor.goalPosition && editor.goalPosition !== key) {
           delete editor.levelData[editor.goalPosition];
         }
         editor.goalPosition = key;
       }
-      editor.levelData[key] = editor.selectedTile;
+      editor.levelData[key] = targetValue;
       changed = true;
     }
   }
@@ -693,13 +1221,20 @@ function render() {
   // First pass: Draw ground tiles with autotiling
   const tilesheet1 = editor.assets.tilesheet;
   const tilesheet2 = editor.assets.tilesheet2;
+  const stoneBrickTilesheet = editor.assets.stoneBrickTilesheet;
+  const plankTilesheet = editor.assets.plankTilesheet;
   
   for (const key of Object.keys(editor.levelData)) {
-    const type = editor.levelData[key];
-    if (type !== 'ground' && type !== 'tile') continue;
+    const { type } = parseTileEntry(editor.levelData[key]);
+    if (type !== 'ground' && type !== 'tile' && type !== 'stone_brick' && type !== 'plank') continue;
     
-    // Use tilesheet2 for ground, tilesheet1 for tile
-    const tilesheet = type === 'ground' ? tilesheet2 : tilesheet1;
+    // Select the appropriate tilesheet
+    let tilesheet;
+    if (type === 'ground') tilesheet = tilesheet2;
+    else if (type === 'tile') tilesheet = tilesheet1;
+    else if (type === 'stone_brick') tilesheet = stoneBrickTilesheet;
+    else if (type === 'plank') tilesheet = plankTilesheet;
+    
     const useTilesheet = tilesheet && tilesheet.width > 0;
     
     const [x, y] = key.split(',').map(Number);
@@ -733,8 +1268,8 @@ function render() {
 
   // Second pass: Draw non-ground tiles (spikes, coins, enemies, spawn, goal, etc.)
   for (const key of Object.keys(editor.levelData)) {
-    const type = editor.levelData[key];
-    if (type === 'ground' || type === 'tile') continue; // Already drawn in first pass
+    const { type, rotation } = parseTileEntry(editor.levelData[key]);
+    if (type === 'ground' || type === 'tile' || type === 'stone_brick' || type === 'plank') continue; // Already drawn in first pass
     
     const [x, y] = key.split(',').map(Number);
     const screenX = Math.floor(x * scaledTileSize - camX);
@@ -744,7 +1279,7 @@ function render() {
     if (screenX + scaledTileSize < 0 || screenX > canvas.width ||
         screenY + scaledTileSize < 0 || screenY > canvas.height) continue;
     
-    renderEditorTile(ctx, type, screenX, screenY, scaledTileSize);
+    renderEditorTile(ctx, type, screenX, screenY, scaledTileSize, rotation);
   }
 
   // Draw ghost tile (only when not in thumbnail mode or capturing)
@@ -757,16 +1292,37 @@ function render() {
       const screenX = Math.floor(gridX * scaledTileSize - camX);
       const screenY = Math.floor(gridY * scaledTileSize - camY);
       
-      // Only draw ghost if there isn't already a tile of the same type there
+      // Only draw ghost if there isn't already a tile of the same type/rotation there
       const key = `${gridX},${gridY}`;
-      if (editor.levelData[key] !== editor.selectedTile) {
+      const existing = parseTileEntry(editor.levelData[key]);
+
+      let ghostRotation = 0;
+      let canShowGhost = true;
+      if (editor.selectedTile === 'spike') {
+        if (existing.type) {
+          canShowGhost = false;
+        } else {
+          const rot = computeSpikeRotation(gridX, gridY);
+          if (rot !== null) {
+            ghostRotation = rot;
+          } else {
+            canShowGhost = false;
+          }
+        }
+      }
+
+      const sameType = existing.type === editor.selectedTile;
+      const sameRotation = !isRotatableTile(editor.selectedTile) || existing.rotation === normalizeRotation(ghostRotation);
+
+      if (canShowGhost && !(sameType && sameRotation)) {
         ctx.globalAlpha = 0.5;
         
         // For ground/tile types, render with autotiling preview
         if ((editor.selectedTile === 'ground' || editor.selectedTile === 'tile')) {
           renderGhostAutotile(ctx, editor.selectedTile, gridX, gridY, screenX, screenY, scaledTileSize);
         } else {
-          renderEditorTile(ctx, editor.selectedTile, screenX, screenY, scaledTileSize);
+          const rotation = isRotatableTile(editor.selectedTile) ? normalizeRotation(ghostRotation) : 0;
+          renderEditorTile(ctx, editor.selectedTile, screenX, screenY, scaledTileSize, rotation);
         }
         
         ctx.globalAlpha = 1.0;
@@ -825,12 +1381,12 @@ function renderEditorBackgrounds(ctx, cameraWorldX, cameraWorldY, zoom, canvasWi
 
   if (editor.levelBackground === 'night') {
     drawLayer(editor.assets.bgNight3, 0, 0);
-    drawLayer(editor.assets.bgNight2, 0.4, 0.25);
-    drawLayer(editor.assets.bgNight1, 0.7, 0.35);
+    drawLayer(editor.assets.bgNight2, 0.2, 0.12);
+    drawLayer(editor.assets.bgNight1, 0.35, 0.18);
   } else if (editor.levelBackground === 'forest') {
     drawLayer(editor.assets.bgForest3, 0, 0);
-    drawLayer(editor.assets.bgForest2, 0.45, 0.22);
-    drawLayer(editor.assets.bgForest1, 0.75, 0.32);
+    drawLayer(editor.assets.bgForest2, 0.22, 0.12);
+    drawLayer(editor.assets.bgForest1, 0.38, 0.18);
   }
 }
 
@@ -856,12 +1412,15 @@ function drawEditorBgLayer(ctx, img, parallaxX, parallaxY, cameraWorldX, cameraW
   let startX = Math.floor(-parallaxOffsetX % scaledWidth);
   if (startX > 0) startX -= scaledWidth;
 
-  const baseY = canvasHeight - scaledHeight;
-  const maxVertSlide = (scaledHeight >= canvasHeight)
-    ? Math.min(24 * zoom, scaledHeight - canvasHeight)
-    : 12 * zoom;
-  const rawOffsetY = baseY - maxVertSlide * (parallaxY || 0) * progressY;
-  const offsetY = Math.round(Math.min(baseY, Math.max(rawOffsetY, canvasHeight - scaledHeight)));
+  let offsetY;
+  const verticalTravel = scaledHeight - canvasHeight;
+  if (verticalTravel <= 0) {
+    // Background shorter than view: pin to bottom
+    offsetY = canvasHeight - scaledHeight;
+  } else {
+    // Background taller than view: map camera progress to full travel
+    offsetY = -verticalTravel * progressY;
+  }
 
   for (let x = startX; x < canvasWidth + scaledWidth; x += scaledWidth) {
     ctx.drawImage(img, Math.round(x), offsetY, scaledWidth, scaledHeight);
@@ -869,11 +1428,11 @@ function drawEditorBgLayer(ctx, img, parallaxX, parallaxY, cameraWorldX, cameraW
 }
 
 // Render a single tile with sprite if available
-function renderEditorTile(ctx, type, screenX, screenY, size) {
+function renderEditorTile(ctx, type, screenX, screenY, size, rotation = 0) {
   switch (type) {
     case 'spike':
       if (editor.assets.spike) {
-        ctx.drawImage(editor.assets.spike, 0, 0, 16, 16, screenX, screenY, size, size);
+        drawEditorSpriteWithRotation(ctx, editor.assets.spike, 0, 0, 16, 16, screenX, screenY, size, size, rotation);
       } else {
         drawTile(ctx, type, screenX, screenY, size);
       }
@@ -911,9 +1470,26 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
       }
       break;
 
+    case 'bubble_powerup':
+      if (editor.assets.bubblePowerup) {
+        ctx.drawImage(editor.assets.bubblePowerup, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
+    case 'hand_powerup':
+      if (editor.assets.handPowerup) {
+        ctx.drawImage(editor.assets.handPowerup, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+
     case 'on_block':
       if (editor.assets.onBlock) {
-        ctx.drawImage(editor.assets.onBlock, 0, 0, 16, 16, screenX, screenY, size, size);
+        const frame = DEFAULT_SWITCH_STATE ? 0 : 1; // solid/visible when switch is ON
+        ctx.drawImage(editor.assets.onBlock, frame * 16, 0, 16, 16, screenX, screenY, size, size);
       } else {
         drawTile(ctx, type, screenX, screenY, size);
       }
@@ -921,7 +1497,8 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
 
     case 'off_block':
       if (editor.assets.offBlock) {
-        ctx.drawImage(editor.assets.offBlock, 16, 0, 16, 16, screenX, screenY, size, size); // default off state is solid
+        const frame = DEFAULT_SWITCH_STATE ? 1 : 0; // solid/visible when switch is OFF
+        ctx.drawImage(editor.assets.offBlock, frame * 16, 0, 16, 16, screenX, screenY, size, size);
       } else {
         drawTile(ctx, type, screenX, screenY, size);
       }
@@ -929,7 +1506,9 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
 
     case 'onoff_switch':
       if (editor.assets.onoffSwitch) {
-        ctx.drawImage(editor.assets.onoffSwitch, 16, 0, 16, 16, screenX, screenY, size, size); // default off frame
+        // Frame 0 = OFF, Frame 1 = ON (per sprite sheet)
+        const frame = DEFAULT_SWITCH_STATE ? 1 : 0;
+        ctx.drawImage(editor.assets.onoffSwitch, frame * 16, 0, 16, 16, screenX, screenY, size, size);
       } else {
         drawTile(ctx, type, screenX, screenY, size);
       }
@@ -942,6 +1521,19 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
         drawTile(ctx, type, screenX, screenY, size);
       }
       break;
+
+    case 'spike_enemy': {
+      // Sprite is 16x20; anchor bottom 16px to the tile grid
+      const sprite = editor.assets.spikeEnemy;
+      const drawHeight = size * (20 / 16);
+      const drawY = screenY - (drawHeight - size);
+      if (sprite) {
+        ctx.drawImage(sprite, 0, 0, 16, 20, screenX, drawY, size, drawHeight);
+      } else {
+        drawTile(ctx, type, screenX, drawY, size);
+      }
+      break;
+    }
       
     case 'spawn':
       if (editor.assets.playerIdle) {
@@ -970,8 +1562,15 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
       
     case 'ground':
     case 'tile':
+    case 'stone_brick':
+    case 'plank':
       // Draw "fully surrounded" tile for ghost preview (mask 15 = all corners filled)
-      const ghostTilesheet = type === 'ground' ? editor.assets.tilesheet2 : editor.assets.tilesheet;
+      let ghostTilesheet;
+      if (type === 'ground') ghostTilesheet = editor.assets.tilesheet2;
+      else if (type === 'tile') ghostTilesheet = editor.assets.tilesheet;
+      else if (type === 'stone_brick') ghostTilesheet = editor.assets.stoneBrickTilesheet;
+      else if (type === 'plank') ghostTilesheet = editor.assets.plankTilesheet;
+      
       if (ghostTilesheet && ghostTilesheet.width > 0) {
         // Mask 15 is the "all filled" variant - at column 2, row 1 (pixel 32, 16)
         ctx.drawImage(ghostTilesheet, 32, 16, 16, 16, screenX, screenY, size, size);
@@ -986,6 +1585,22 @@ function renderEditorTile(ctx, type, screenX, screenY, size) {
       drawTile(ctx, type, screenX, screenY, size);
       break;
   }
+}
+
+function drawEditorSpriteWithRotation(ctx, img, sx, sy, sw, sh, dx, dy, dw, dh, rotation = 0) {
+  const rot = normalizeRotation(rotation);
+  if (!rot) {
+    ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    return;
+  }
+
+  const cx = dx + dw / 2;
+  const cy = dy + dh / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate((rot * Math.PI) / 180);
+  ctx.drawImage(img, sx, sy, sw, sh, -dw / 2, -dh / 2, dw, dh);
+  ctx.restore();
 }
 
 // Get vertex mask for autotiling in editor
@@ -1004,9 +1619,9 @@ function isEditorTileSolid(x, y, tileType) {
   if (y < 0) return false; // Top is open
   
   const key = `${x},${y}`;
-  const t = editor.levelData[key];
+  const t = parseTileEntry(editor.levelData[key]);
   // Only match the same tile type for autotiling
-  return t === tileType;
+  return t.type === tileType;
 }
 
 // Draw a single quadrant from the autotile sheet (scaled)
@@ -1099,6 +1714,10 @@ async function createNewDraft() {
   }
   
   updateStatus('New draft (unsaved)');
+
+  // Load the last-used hotbar for new drafts
+  loadHotbar();
+  renderHotbar();
 
   // Check draft limit
   if (editor.drafts.length >= MAX_DRAFTS_PER_USER) {
@@ -1450,9 +2069,15 @@ async function loadLevel(levelId) {
         if (level.level_data) {
           editor.gridWidth = level.level_data.width || 50;
           editor.gridHeight = level.level_data.height || 20;
-          editor.levelData = level.level_data.tiles || {};
+          editor.levelData = normalizeTiles(level.level_data.tiles || {});
           editor.levelMusic = level.level_data.music || '';
             editor.levelBackground = level.level_data.background || '';
+          
+          // Load hotbar from level data or use last used
+          if (level.level_data.hotbar && Array.isArray(level.level_data.hotbar)) {
+            editor.hotbar = level.level_data.hotbar;
+          }
+          renderHotbar();
 
           const musicSelect = document.getElementById('musicSelect');
           if (musicSelect) {
@@ -1465,9 +2090,10 @@ async function loadLevel(levelId) {
           
           // Restore spawn and goal positions
           Object.keys(editor.levelData).forEach(key => {
-            if (editor.levelData[key] === 'spawn') {
+            const tile = parseTileEntry(editor.levelData[key]);
+            if (tile.type === 'spawn') {
               editor.spawnPosition = key;
-            } else if (editor.levelData[key] === 'goal') {
+            } else if (tile.type === 'goal') {
               editor.goalPosition = key;
             }
           });
@@ -1495,9 +2121,15 @@ async function loadLevel(levelId) {
         if (level.level_data) {
           editor.gridWidth = level.level_data.width || 50;
           editor.gridHeight = level.level_data.height || 20;
-          editor.levelData = level.level_data.tiles || {};
+          editor.levelData = normalizeTiles(level.level_data.tiles || {});
           editor.levelMusic = level.level_data.music || '';
             editor.levelBackground = level.level_data.background || '';
+          
+          // Load hotbar from level data or use last used
+          if (level.level_data.hotbar && Array.isArray(level.level_data.hotbar)) {
+            editor.hotbar = level.level_data.hotbar;
+          }
+          renderHotbar();
 
           const musicSelect = document.getElementById('musicSelect');
           if (musicSelect) {
@@ -1510,9 +2142,10 @@ async function loadLevel(levelId) {
           
           // Restore spawn and goal positions
           Object.keys(editor.levelData).forEach(key => {
-            if (editor.levelData[key] === 'spawn') {
+            const tile = parseTileEntry(editor.levelData[key]);
+            if (tile.type === 'spawn') {
               editor.spawnPosition = key;
-            } else if (editor.levelData[key] === 'goal') {
+            } else if (tile.type === 'goal') {
               editor.goalPosition = key;
             }
           });
@@ -1555,7 +2188,8 @@ async function autoSave() {
           height: editor.gridHeight,
           tiles: editor.levelData,
           music: editor.levelMusic,
-          background: editor.levelBackground
+          background: editor.levelBackground,
+          hotbar: editor.hotbar
         }));
         editor.isNewDraft = false;
         editor.hasUnsavedChanges = false;
@@ -1576,7 +2210,8 @@ async function autoSave() {
             height: editor.gridHeight,
             tiles: editor.levelData,
             music: editor.levelMusic,
-            background: editor.levelBackground
+            background: editor.levelBackground,
+            hotbar: editor.hotbar
           }
         })
       });
@@ -1616,7 +2251,8 @@ async function autoSave() {
       height: editor.gridHeight,
       tiles: editor.levelData,
       music: editor.levelMusic,
-      background: editor.levelBackground
+      background: editor.levelBackground,
+      hotbar: editor.hotbar
     }));
     editor.hasUnsavedChanges = false;
     updateStatus('Saved (local)');
@@ -1636,7 +2272,8 @@ async function autoSave() {
           height: editor.gridHeight,
           tiles: editor.levelData,
           music: editor.levelMusic,
-          background: editor.levelBackground
+          background: editor.levelBackground,
+          hotbar: editor.hotbar
         }
       })
     });
@@ -1692,25 +2329,25 @@ function applyResize() {
       
       Object.keys(editor.levelData).forEach(key => {
         const [x, y] = key.split(',').map(Number);
+        const tile = parseTileEntry(editor.levelData[key]);
         const newY = y + heightDiff;
         
         // Only keep tiles that are still within bounds
         if (x < width && newY >= 0 && newY < height) {
           const newKey = `${x},${newY}`;
-          newLevelData[newKey] = editor.levelData[key];
+          newLevelData[newKey] = buildTileValue(tile.type, tile.rotation);
           
           // Update spawn and goal positions
-          if (editor.levelData[key] === 'spawn') {
+          if (tile.type === 'spawn') {
             editor.spawnPosition = newKey;
-          } else if (editor.levelData[key] === 'goal') {
+          } else if (tile.type === 'goal') {
             editor.goalPosition = newKey;
           }
         } else {
           // Tile is out of bounds, remove it
-          const tileType = editor.levelData[key];
-          if (tileType === 'spawn') {
+          if (tile.type === 'spawn') {
             editor.spawnPosition = null;
-          } else if (tileType === 'goal') {
+          } else if (tile.type === 'goal') {
             editor.goalPosition = null;
           }
         }
@@ -1721,11 +2358,11 @@ function applyResize() {
       // Only width changed, just remove tiles outside new width bounds
       Object.keys(editor.levelData).forEach(key => {
         const [x, y] = key.split(',').map(Number);
+        const tile = parseTileEntry(editor.levelData[key]);
         if (x >= width || y >= height) {
-          const tileType = editor.levelData[key];
-          if (tileType === 'spawn') {
+          if (tile.type === 'spawn') {
             editor.spawnPosition = null;
-          } else if (tileType === 'goal') {
+          } else if (tile.type === 'goal') {
             editor.goalPosition = null;
           }
           delete editor.levelData[key];
@@ -2227,7 +2864,7 @@ function captureThumbnail() {
   const tilesheet2 = editor.assets.tilesheet2;
   
   for (const key of Object.keys(editor.levelData)) {
-    const type = editor.levelData[key];
+    const { type } = parseTileEntry(editor.levelData[key]);
     if (type !== 'ground' && type !== 'tile') continue;
     
     const [x, y] = key.split(',').map(Number);
@@ -2262,7 +2899,7 @@ function captureThumbnail() {
   
   // Second pass: Draw non-ground tiles
   for (const key of Object.keys(editor.levelData)) {
-    const type = editor.levelData[key];
+    const { type, rotation } = parseTileEntry(editor.levelData[key]);
     if (type === 'ground' || type === 'tile') continue;
     
     const [x, y] = key.split(',').map(Number);
@@ -2274,7 +2911,7 @@ function captureThumbnail() {
     const screenX = (x - startTileX) * tileSize;
     const screenY = (y - startTileY) * tileSize;
     
-    renderEditorTile(ctx, type, screenX, screenY, tileSize);
+    renderEditorTile(ctx, type, screenX, screenY, tileSize, rotation);
   }
   
   const dataUrl = canvas.toDataURL('image/png', 0.9);

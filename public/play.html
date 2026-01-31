@@ -3,10 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
   <title>Play Level - Limeade</title>
   <link rel="stylesheet" href="css/styles.css">
   <link rel="stylesheet" href="css/play.css">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    /* Hide navbar in standalone/PWA mode */
+    @media (display-mode: standalone), (display-mode: fullscreen) {
+      body.play-page.game-active .navbar {
+        display: none;
+      }
+      body.play-page.game-active .game-container {
+        height: 100vh;
+      }
+    }
+  </style>
 </head>
 <body class="play-page">
   <!-- Navigation Bar -->
@@ -69,5 +83,35 @@
   <script src="js/navigation.js"></script>
   <script src="js/graphics.js"></script>
   <script src="js/play.js"></script>
+  <script>
+    // Detect standalone/PWA mode and toggle fullscreen mode
+    (function() {
+      function isStandalone() {
+        return window.matchMedia('(display-mode: standalone)').matches ||
+               window.navigator.standalone === true;
+      }
+
+      if (isStandalone()) {
+        // Wrap existing functions to toggle game-active class
+        const originalResumeGame = resumeGame;
+        window.resumeGame = function() {
+          document.body.classList.add('game-active');
+          originalResumeGame();
+        };
+        
+        const originalPauseGame = pauseGame;
+        window.pauseGame = function() {
+          document.body.classList.remove('game-active');
+          originalPauseGame();
+        };
+        
+        const originalShowLevelCompleteDialog = showLevelCompleteDialog;
+        window.showLevelCompleteDialog = function() {
+          document.body.classList.remove('game-active');
+          originalShowLevelCompleteDialog();
+        };
+      }
+    })();
+  </script>
 </body>
 </html>

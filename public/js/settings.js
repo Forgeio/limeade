@@ -1,7 +1,8 @@
 // Settings Page Logic
 
 let currentUser = null;
-let currentControls = {
+let vibrationsEnabled = true;
+const defaultKeyboard = {
   left: 'ArrowLeft',
   right: 'ArrowRight',
   up: 'ArrowUp',
@@ -9,8 +10,81 @@ let currentControls = {
   jump: 'ArrowUp',
   attack: 'Space'
 };
+
+const defaultGamepad = {
+  dpadLeft: 14,
+  dpadRight: 15,
+  dpadUp: 12,
+  dpadDown: 13,
+  buttonJump: 0,   // A
+  buttonAttack: 7  // RT (Right Trigger)
+};
+
+let currentControls = {
+  keyboard: { ...defaultKeyboard },
+  gamepad: { ...defaultGamepad }
+};
 let capturingKey = null;
+let capturingGamepad = null;
 let keydownHandler = null;
+let gamepadPollHandle = null;
+
+function captureGamepad(action) {
+    const el = document.querySelector(`[data-action="gamepad-${action}"]`);
+    if (!el) return;
+
+    // Cancel keyboard capture if active
+    cancelKeyCapture();
+    stopGamepadCapture();
+
+    capturingGamepad = action;
+    el.textContent = 'Press a gamepad button... (ESC to cancel)';
+    el.style.background = 'var(--primary-color)';
+    el.style.color = 'white';
+
+    document.addEventListener('keydown', cancelGamepadOnEsc);
+    gamepadPollHandle = requestAnimationFrame(pollCaptureFrame);
+}
+
+function pollCaptureFrame() {
+    if (!capturingGamepad) return;
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const pad = pads.find(p => p);
+    if (pad) {
+        pad.buttons.forEach((b, idx) => {
+            if (b && b.pressed && capturingGamepad) {
+                currentControls.gamepad[capturingGamepad] = idx;
+                stopGamepadCapture();
+                updateControlsDisplay();
+            }
+        });
+    }
+    if (capturingGamepad) {
+        gamepadPollHandle = requestAnimationFrame(pollCaptureFrame);
+    }
+}
+
+function cancelGamepadOnEsc(e) {
+    if (e.code === 'Escape') {
+        stopGamepadCapture();
+    }
+}
+
+function stopGamepadCapture() {
+    if (!capturingGamepad) return;
+    const el = document.querySelector(`[data-action="gamepad-${capturingGamepad}"]`);
+    if (el) {
+        el.style.background = '';
+        el.style.color = '';
+        updateControlsDisplay();
+    }
+    capturingGamepad = null;
+    document.removeEventListener('keydown', cancelGamepadOnEsc);
+    if (gamepadPollHandle) {
+        cancelAnimationFrame(gamepadPollHandle);
+        gamepadPollHandle = null;
+    }
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     // Load user data from API
@@ -52,8 +126,20 @@ function populateSettings(user) {
     
     // Load control scheme
     if (user.control_scheme) {
-        currentControls = user.control_scheme;
-        updateControlsDisplay();
+        const cs = user.control_scheme;
+        const keyboard = cs.keyboard ? { ...defaultKeyboard, ...cs.keyboard } : { ...cs };
+        const gamepad = cs.gamepad ? { ...defaultGamepad, ...cs.gamepad } : { ...defaultGamepad };
+        currentControls = { keyboard, gamepad };
+    } else {
+        currentControls = { keyboard: { ...defaultKeyboard }, gamepad: { ...defaultGamepad } };
+    }
+    updateControlsDisplay();
+    
+    // Load vibration preference
+    vibrationsEnabled = user.vibrations_enabled !== false;
+    const vibrationsCheckbox = document.getElementById('vibrationsEnabled');
+    if (vibrationsCheckbox) {
+        vibrationsCheckbox.checked = vibrationsEnabled;
     }
     
     // Check if user can change username
@@ -137,10 +223,18 @@ async function saveProfile() {
 
 // Control scheme functions
 function updateControlsDisplay() {
-    for (const action in currentControls) {
-        const el = document.querySelector(`[data-action="${action}"]`);
+    // Keyboard
+    for (const action in currentControls.keyboard) {
+        const el = document.querySelector(`[data-action="keyboard-${action}"]`);
         if (el) {
-            el.textContent = formatKeyName(currentControls[action]);
+            el.textContent = formatKeyName(currentControls.keyboard[action]);
+        }
+    }
+    // Gamepad
+    for (const action in currentControls.gamepad) {
+        const el = document.querySelector(`[data-action="gamepad-${action}"]`);
+        if (el) {
+            el.textContent = formatGamepadName(action, currentControls.gamepad[action]);
         }
     }
 }
@@ -159,9 +253,35 @@ function formatKeyName(key) {
     return keyNames[key] || key;
 }
 
+function formatGamepadName(action, val) {
+    const buttonNames = {
+        0: 'A',
+        1: 'B',
+        2: 'X',
+        3: 'Y',
+        4: 'LB',
+        5: 'RB',
+        6: 'LT',
+        7: 'RT',
+        8: 'Back',
+        9: 'Start',
+        10: 'LS',
+        11: 'RS',
+        12: 'D-Up',
+        13: 'D-Down',
+        14: 'D-Left',
+        15: 'D-Right'
+    };
+    const label = buttonNames[val] || `Button ${val}`;
+    return label;
+}
+
 function captureKey(action) {
-    const el = document.querySelector(`[data-action="${action}"]`);
+    const el = document.querySelector(`[data-action="keyboard-${action}"]`);
     if (!el) return;
+
+    // Cancel any gamepad capture
+    stopGamepadCapture();
     
     // Clean up any existing handler
     if (keydownHandler) {
@@ -190,7 +310,7 @@ function handleKeyCapture(e) {
     }
     
     // Update the control
-    currentControls[capturingKey] = e.code;
+    currentControls.keyboard[capturingKey] = e.code;
     
     // Update display
     updateControlsDisplay();
@@ -201,7 +321,7 @@ function handleKeyCapture(e) {
 
 function cancelKeyCapture() {
     if (capturingKey) {
-        const el = document.querySelector(`[data-action="${capturingKey}"]`);
+        const el = document.querySelector(`[data-action="keyboard-${capturingKey}"]`);
         if (el) {
             el.style.background = '';
             el.style.color = '';
@@ -248,12 +368,8 @@ async function saveControls() {
 
 function resetControls() {
     currentControls = {
-        left: 'ArrowLeft',
-        right: 'ArrowRight',
-        up: 'ArrowUp',
-        down: 'ArrowDown',
-        jump: 'ArrowUp',
-        attack: 'Space'
+        keyboard: { ...defaultKeyboard },
+        gamepad: { ...defaultGamepad }
     };
     updateControlsDisplay();
     
@@ -261,4 +377,40 @@ function resetControls() {
     messageEl.textContent = 'Controls reset to default (click Save to confirm)';
     messageEl.style.color = 'var(--text-secondary)';
 }
+
+async function saveVibrations() {
+    if (!currentUser) return;
+    
+    const checkbox = document.getElementById('vibrationsEnabled');
+    vibrationsEnabled = checkbox.checked;
+    
+    const messageEl = document.getElementById('vibrationsMessage');
+    
+    try {
+        const response = await fetch(`/api/users/${currentUser.id}/vibrations`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ vibrations_enabled: vibrationsEnabled })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            messageEl.textContent = 'Vibration preference saved!';
+            messageEl.style.color = 'var(--primary-color)';
+        } else {
+            messageEl.textContent = data.error || 'Failed to save preference';
+            messageEl.style.color = '#ff6b6b';
+        }
+    } catch (err) {
+        console.error('Error saving vibrations:', err);
+        messageEl.textContent = 'Error saving preference';
+        messageEl.style.color = '#ff6b6b';
+    }
+}
+
+// Initialize display on load
+updateControlsDisplay();
 

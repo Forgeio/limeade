@@ -61,6 +61,7 @@ router.get('/user', (req, res) => {
       control_scheme: req.user.control_scheme,
       username_changed_at: req.user.username_changed_at,
       needs_username: req.user.needs_username,
+      vibrations_enabled: req.user.vibrations_enabled !== false,
     });
   } else {
     res.status(401).json({ error: 'Not authenticated' });

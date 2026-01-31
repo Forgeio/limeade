@@ -265,36 +265,86 @@
 
       <!-- Controls Settings -->
       <div class="settings-section">
+        <div class="section-header">
+          <h2>Controls</h2>
+        </div>
+
+        <h3 style="margin-bottom:12px;">Keyboard</h3>
         
         <div class="keybind-row">
-          <span class="action-name">Move Left</span>
-          <div class="key-display" data-action="left" onclick="captureKey('left')">ArrowLeft</div>
+          <span class="action-name">Left</span>
+          <div class="key-display" data-action="keyboard-left" onclick="captureKey('left')">ArrowLeft</div>
         </div>
         <div class="keybind-row">
-          <span class="action-name">Move Right</span>
-          <div class="key-display" data-action="right" onclick="captureKey('right')">ArrowRight</div>
+          <span class="action-name">Right</span>
+          <div class="key-display" data-action="keyboard-right" onclick="captureKey('right')">ArrowRight</div>
         </div>
         <div class="keybind-row">
-          <span class="action-name">Move Up</span>
-          <div class="key-display" data-action="up" onclick="captureKey('up')">ArrowUp</div>
+          <span class="action-name">Up</span>
+          <div class="key-display" data-action="keyboard-up" onclick="captureKey('up')">ArrowUp</div>
         </div>
         <div class="keybind-row">
-          <span class="action-name">Move Down</span>
-          <div class="key-display" data-action="down" onclick="captureKey('down')">ArrowDown</div>
+          <span class="action-name">Down</span>
+          <div class="key-display" data-action="keyboard-down" onclick="captureKey('down')">ArrowDown</div>
         </div>
         <div class="keybind-row">
           <span class="action-name">Jump</span>
-          <div class="key-display" data-action="jump" onclick="captureKey('jump')">ArrowUp</div>
+          <div class="key-display" data-action="keyboard-jump" onclick="captureKey('jump')">ArrowUp</div>
         </div>
         <div class="keybind-row">
           <span class="action-name">Attack</span>
-          <div class="key-display" data-action="attack" onclick="captureKey('attack')">Space</div>
+          <div class="key-display" data-action="keyboard-attack" onclick="captureKey('attack')">Space</div>
+        </div>
+
+        <h3 style="margin:24px 0 12px;">Controller</h3>
+        <div class="keybind-row">
+          <span class="action-name">Left</span>
+          <div class="key-display" data-action="gamepad-dpadLeft" onclick="captureGamepad('dpadLeft')">D-Left</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Right</span>
+          <div class="key-display" data-action="gamepad-dpadRight" onclick="captureGamepad('dpadRight')">D-Right</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Up</span>
+          <div class="key-display" data-action="gamepad-dpadUp" onclick="captureGamepad('dpadUp')">D-Up</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Down</span>
+          <div class="key-display" data-action="gamepad-dpadDown" onclick="captureGamepad('dpadDown')">D-Down</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Jump</span>
+          <div class="key-display" data-action="gamepad-buttonJump" onclick="captureGamepad('buttonJump')">A</div>
+        </div>
+        <div class="keybind-row">
+          <span class="action-name">Attack</span>
+          <div class="key-display" data-action="gamepad-buttonAttack" onclick="captureGamepad('buttonAttack')">RT</div>
         </div>
         
         <div style="margin-top: 24px;">
             <button class="btn btn-primary" onclick="saveControls()">Save Controls</button>
             <button class="btn btn-outline" style="margin-left: 8px;" onclick="resetControls()">Reset to Default</button>
             <div id="controlsMessage" style="margin-top: 12px; color: var(--text-secondary);"></div>
+        </div>
+      </div>
+
+      <!-- Vibration Settings -->
+      <div class="settings-section">
+        <div class="section-header">
+          <h2>Controller Vibration</h2>
+        </div>
+        
+        <div style="max-width: 400px; margin: 0 auto; text-align: left;">
+          <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+            <input type="checkbox" id="vibrationsEnabled" checked style="width: 20px; height: 20px; cursor: pointer;">
+            <span style="font-weight: 500;">Enable controller vibrations</span>
+          </label>
+          
+          <div style="margin-top: 24px;">
+            <button class="btn btn-primary" onclick="saveVibrations()">Save Vibration Settings</button>
+            <div id="vibrationsMessage" style="margin-top: 12px; color: var(--text-secondary);"></div>
+          </div>
         </div>
       </div>
 
