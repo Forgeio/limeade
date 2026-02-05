@@ -477,7 +477,10 @@ router.post('/:id/play', async (req, res) => {
     const { completed, completion_time } = req.body;
 
     // Fetch creator to block creator records and validate level exists
-    const levelMeta = await db.query('SELECT creator_id FROM levels WHERE id = $1', [id]);
+    const levelMeta = await db.query(
+      'SELECT creator_id, difficulty_rating, difficulty_rd, rating_update_count FROM levels WHERE id = $1',
+      [id]
+    );
     if (levelMeta.rows.length === 0) {
       return res.status(404).json({ error: 'Level not found' });
     }
@@ -564,9 +567,50 @@ router.post('/:id/play', async (req, res) => {
       );
     }
 
+    // --- Rating update fallback (for clients that do not use session endpoints) ---
+    const userRatingRow = await db.query(
+      'SELECT skill_rating, rating_deviation FROM users WHERE id = $1',
+      [req.user.id]
+    );
+
+    const playerSR = userRatingRow.rows[0]?.skill_rating || ratingSystem.DEFAULT_RATING;
+    const playerRD = userRatingRow.rows[0]?.rating_deviation || ratingSystem.DEFAULT_RD;
+    const levelDR = levelMeta.rows[0].difficulty_rating || ratingSystem.DEFAULT_RATING;
+    const levelRD = levelMeta.rows[0].difficulty_rd || ratingSystem.DEFAULT_RD;
+    const updateCount = levelMeta.rows[0].rating_update_count || 0;
+
+    // Build a minimal outcome snapshot from the play payload
+    const fallbackSession = {
+      completed: !!completed,
+      attempts: 1,
+      deaths: completed ? 0 : 1,
+      furthest_progress: completed ? 100 : 0,
+      completion_time: completion_time || null
+    };
+
+    const outcomeScore = ratingSystem.calculateOutcomeScore(fallbackSession);
+    const expectedScore = ratingSystem.calculateExpectedClearChance(playerSR, levelDR);
+
+    const newPlayerRating = ratingSystem.updatePlayerRating(playerSR, playerRD, outcomeScore, expectedScore);
+    const newLevelRating = ratingSystem.updateLevelRating(levelDR, levelRD, outcomeScore, expectedScore, updateCount);
+
+    await db.query(
+      'UPDATE users SET skill_rating = $1, rating_deviation = $2, last_rating_update = NOW() WHERE id = $3',
+      [newPlayerRating.skill_rating, newPlayerRating.rating_deviation, req.user.id]
+    );
+
+    await db.query(
+      'UPDATE levels SET difficulty_rating = $1, difficulty_rd = $2, rating_update_count = rating_update_count + 1 WHERE id = $3',
+      [newLevelRating.difficulty_rating, newLevelRating.difficulty_rd, id]
+    );
+
     res.json({ 
       message: 'Play recorded successfully',
-      has_beaten: completed || false
+      has_beaten: completed || false,
+      player_rating_change: newPlayerRating.rating_change,
+      level_rating_change: newLevelRating.rating_change,
+      new_skill_rating: newPlayerRating.skill_rating,
+      new_difficulty_rating: newLevelRating.difficulty_rating
     });
   } catch (err) {
     console.error('Error recording play:', err);

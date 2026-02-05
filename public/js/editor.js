@@ -7,6 +7,7 @@ const CAMERA_MAX_SPEED = 15;
 const CAMERA_BOOST_SPEED = 40;
 const CAMERA_BOOST_DELAY = 1000;
 const MAX_DRAFTS_PER_USER = 8; // Must match backend constant
+const NPC_TEXT_MAX = 120;
 
 // Editor state
 const editor = {
@@ -69,6 +70,7 @@ const editor = {
   selectedSlot: 0,
   inventoryOpen: false,
   currentCategory: 'terrain',
+  lastNpcText: '',
   assets: {
     tilesheet: null,
     tilesheet2: null,
@@ -88,6 +90,9 @@ const editor = {
     spikeEnemy: null,
     playerIdle: null,
     goal: null,
+    cannonBase: null,
+    cannonHead: null,
+    cannonBullet: null,
     bgNight1: null,
     bgNight2: null,
     bgNight3: null,
@@ -115,16 +120,28 @@ function normalizeRotation(rot) {
 function parseTileEntry(tile) {
   if (typeof tile === 'string') return { type: tile, rotation: 0 };
   if (tile && typeof tile === 'object') {
-    return {
-      type: tile.type || '',
-      rotation: normalizeRotation(tile.rotation)
-    };
+    const extra = { ...tile };
+    const type = extra.type || '';
+    const rotation = normalizeRotation(extra.rotation);
+    delete extra.type;
+    delete extra.rotation;
+    return { type, rotation, ...extra };
   }
   return { type: '', rotation: 0 };
 }
 
-function buildTileValue(type, rotation = 0) {
-  return isRotatableTile(type) ? { type, rotation: normalizeRotation(rotation) } : type;
+function buildTileValue(type, rotation = 0, extra = null) {
+  const base = isRotatableTile(type)
+    ? { type, rotation: normalizeRotation(rotation) }
+    : { type, rotation: 0 };
+  if (extra && typeof extra === 'object') {
+    Object.assign(base, extra);
+  }
+  // Return string for simple tiles without extras to keep storage minimal
+  if (!extra && !isRotatableTile(type)) {
+    return type;
+  }
+  return base;
 }
 
 function normalizeTiles(rawTiles) {
@@ -132,7 +149,8 @@ function normalizeTiles(rawTiles) {
   Object.entries(rawTiles || {}).forEach(([key, value]) => {
     const info = parseTileEntry(value);
     if (!info.type) return;
-    normalized[key] = buildTileValue(info.type, info.rotation);
+    const { type, rotation, ...extra } = info;
+    normalized[key] = buildTileValue(type, rotation, Object.keys(extra).length ? extra : null);
   });
   return normalized;
 }
@@ -195,13 +213,17 @@ function loadEditorAssets() {
     loadEditorImage('graphics/enemy1_walk.png').then(img => editor.assets.enemyWalk = img),
     loadEditorImage('graphics/spike_enemy.png').then(img => editor.assets.spikeEnemy = img),
     loadEditorImage('graphics/player_idle.png').then(img => editor.assets.playerIdle = img),
+    loadEditorImage('graphics/cannon_base.png').then(img => editor.assets.cannonBase = img),
+    loadEditorImage('graphics/cannon_head.png').then(img => editor.assets.cannonHead = img),
+    loadEditorImage('graphics/cannon_bullet.png').then(img => editor.assets.cannonBullet = img),
     loadEditorImage('graphics/bgs/night/layer_1.png').then(img => editor.assets.bgNight1 = img),
     loadEditorImage('graphics/bgs/night/layer_2.png').then(img => editor.assets.bgNight2 = img),
     loadEditorImage('graphics/bgs/night/layer_3.png').then(img => editor.assets.bgNight3 = img),
     loadEditorImage('graphics/bgs/forest/layer_1.png').then(img => editor.assets.bgForest1 = img),
     loadEditorImage('graphics/bgs/forest/layer_2.png').then(img => editor.assets.bgForest2 = img),
     loadEditorImage('graphics/bgs/forest/layer_3.png').then(img => editor.assets.bgForest3 = img),
-    loadEditorImage('graphics/goal.png').then(img => editor.assets.goal = img)
+    loadEditorImage('graphics/goal.png').then(img => editor.assets.goal = img),
+    loadEditorImage('graphics/npc_1.png').then(img => editor.assets.npcIdle = img)
   ]).then(() => {
     editor.assetsLoaded = true;
   });
@@ -455,9 +477,9 @@ function updateDefaultZoom() {
 // Tile categories for inventory
 const TILE_CATEGORIES = {
   terrain: ['ground', 'tile', 'stone_brick', 'plank'],
-  entities: ['enemy', 'spike_enemy', 'spike'],
+  entities: ['enemy', 'spike_enemy', 'turret', 'spike'],
   items: ['coin', 'diamond', 'health', 'surprise_token', 'bubble_powerup', 'hand_powerup'],
-  special: ['spawn', 'goal', 'on_block', 'off_block', 'onoff_switch']
+  special: ['spawn', 'goal', 'on_block', 'off_block', 'onoff_switch', 'npc']
 };
 
 const TILE_INFO = {
@@ -467,6 +489,7 @@ const TILE_INFO = {
   plank: { name: 'Plank', category: 'terrain', canvas: true },
   enemy: { name: 'Enemy', category: 'entities', img: 'graphics/enemy1_walk.png' },
   spike_enemy: { name: 'Spike Enemy', category: 'entities', img: 'graphics/spike_enemy.png' },
+  turret: { name: 'Turret', category: 'entities', img: 'graphics/cannon_base.png' },
   spike: { name: 'Spike', category: 'entities', img: 'graphics/spike.png' },
   spawn: { name: 'Spawn Point', category: 'special', img: 'graphics/player_idle.png' },
   goal: { name: 'Goal', category: 'special', img: 'graphics/goal.png' },
@@ -478,7 +501,8 @@ const TILE_INFO = {
   hand_powerup: { name: 'Hand Powerup', category: 'items', img: 'graphics/hand_powerup.png' },
   on_block: { name: 'On Block', category: 'special', img: 'graphics/on_block.png' },
   off_block: { name: 'Off Block', category: 'special', img: 'graphics/off_block.png' },
-  onoff_switch: { name: 'On/Off Switch', category: 'special', img: 'graphics/onoff_switch.png' }
+  onoff_switch: { name: 'On/Off Switch', category: 'special', img: 'graphics/onoff_switch.png' },
+  npc: { name: 'NPC', category: 'special', img: 'graphics/npc_1.png' }
 };
 
 // Calculate responsive hotbar slots
@@ -514,6 +538,7 @@ function renderHotbar() {
     const btn = document.createElement('button');
     btn.className = 'tile-btn';
     btn.dataset.slot = i;
+    btn.draggable = !!tile; // Only allow dragging when populated
     
     if (tile) {
       btn.dataset.tile = tile;
@@ -552,6 +577,12 @@ function renderHotbar() {
         selectTileFromSlot(tile, i);
       }
     });
+
+    // Drag start (for swapping hotbar slots)
+    btn.addEventListener('dragstart', (e) => {
+      if (!tile) return;
+      e.dataTransfer.setData('text/plain', JSON.stringify({ source: 'hotbar', tile, slot: i }));
+    });
     
     // Drop target
     btn.addEventListener('dragover', (e) => {
@@ -566,13 +597,41 @@ function renderHotbar() {
     btn.addEventListener('drop', (e) => {
       e.preventDefault();
       btn.classList.remove('drop-target');
-      const draggedTile = e.dataTransfer.getData('text/plain');
-      if (draggedTile) {
-        editor.hotbar[i] = draggedTile;
-        saveHotbar();
-        renderHotbar();
-        renderInventory();
+      const data = e.dataTransfer.getData('text/plain');
+      let payload = null;
+      try {
+        payload = JSON.parse(data);
+      } catch (err) {
+        // Not JSON, treat as plain tile string
       }
+
+      if (payload && payload.source === 'hotbar') {
+        const fromSlot = payload.slot;
+        if (typeof fromSlot === 'number' && fromSlot !== i && editor.hotbar[fromSlot]) {
+          const tmp = editor.hotbar[i];
+          editor.hotbar[i] = editor.hotbar[fromSlot];
+          editor.hotbar[fromSlot] = tmp || null;
+          saveHotbar();
+          renderHotbar();
+          renderInventory();
+        }
+        return;
+      }
+
+      const draggedTile = (payload && payload.tile) || data;
+      if (!draggedTile) return;
+
+      const existingIndex = editor.hotbar.indexOf(draggedTile);
+      if (existingIndex === -1) {
+        editor.hotbar[i] = draggedTile;
+      } else if (existingIndex !== i) {
+        const tmp = editor.hotbar[i];
+        editor.hotbar[i] = draggedTile;
+        editor.hotbar[existingIndex] = tmp || null;
+      }
+      saveHotbar();
+      renderHotbar();
+      renderInventory();
     });
     
     hotbar.appendChild(btn);
@@ -700,10 +759,16 @@ function renderInventory() {
     btn.addEventListener('click', () => {
       const emptyIndex = editor.hotbar.findIndex(t => !t);
       if (emptyIndex !== -1) {
-        editor.hotbar[emptyIndex] = tile;
-        saveHotbar();
-        renderHotbar();
-        renderInventory();
+          // Prevent duplicates: if tile already exists, just select it
+          const existingIndex = editor.hotbar.indexOf(tile);
+          if (existingIndex !== -1) {
+            selectTileFromSlot(tile, existingIndex);
+          } else {
+            editor.hotbar[emptyIndex] = tile;
+            saveHotbar();
+            renderHotbar();
+            renderInventory();
+          }
       } else {
         selectTile(tile);
       }
@@ -1001,6 +1066,25 @@ function placeTile() {
       }
     }
 
+    // NPC placement: must sit on solid block and not overlap another NPC
+    let npcText = null;
+    if (editor.selectedTile === 'npc') {
+      const belowKey = `${gridX},${gridY + 1}`;
+      const belowTile = parseTileEntry(editor.levelData[belowKey]);
+      const isSupported = isAttachableTile(belowTile.type);
+      const occupied = existing.type && existing.type !== 'npc';
+      if (!isSupported || occupied) {
+        return;
+      }
+
+      // Prompt for NPC dialog text (reuse last entry as default)
+      const defaultText = existing.type === 'npc' ? (existing.text || '') : (editor.lastNpcText || '');
+      const promptResult = window.prompt('Enter NPC dialog (max 120 chars):', defaultText);
+      if (promptResult === null) return; // Cancelled
+      npcText = promptResult.trim().slice(0, NPC_TEXT_MAX);
+      editor.lastNpcText = npcText;
+    }
+
     // Auto-rotate spikes toward supporting tile
     let targetRotation = 0;
     if (editor.selectedTile === 'spike') {
@@ -1012,7 +1096,8 @@ function placeTile() {
       targetRotation = rot;
     }
 
-    const targetValue = buildTileValue(editor.selectedTile, targetRotation);
+    const extra = editor.selectedTile === 'npc' ? { text: npcText } : null;
+    const targetValue = buildTileValue(editor.selectedTile, targetRotation, extra);
     const targetInfo = parseTileEntry(targetValue);
 
     if (existing.type !== targetInfo.type || existing.rotation !== targetInfo.rotation) {
@@ -1513,6 +1598,17 @@ function renderEditorTile(ctx, type, screenX, screenY, size, rotation = 0) {
         drawTile(ctx, type, screenX, screenY, size);
       }
       break;
+
+    case 'npc': {
+      // Draw idle frame 0 for editor preview; animation handled in play.js
+      const sprite = editor.assets.npcIdle;
+      if (sprite) {
+        ctx.drawImage(sprite, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
+      }
+      break;
+    }
       
     case 'enemy':
       if (editor.assets.enemyWalk) {
@@ -1531,6 +1627,22 @@ function renderEditorTile(ctx, type, screenX, screenY, size, rotation = 0) {
         ctx.drawImage(sprite, 0, 0, 16, 20, screenX, drawY, size, drawHeight);
       } else {
         drawTile(ctx, type, screenX, drawY, size);
+      }
+      break;
+    }
+    
+    case 'turret': {
+      // Draw both base and head sprites for turret
+      const baseSprite = editor.assets.cannonBase;
+      const headSprite = editor.assets.cannonHead;
+      
+      if (baseSprite && headSprite) {
+        // Draw base
+        ctx.drawImage(baseSprite, 0, 0, 16, 16, screenX, screenY, size, size);
+        // Draw head on top (no rotation in editor, just show it facing right)
+        ctx.drawImage(headSprite, 0, 0, 16, 16, screenX, screenY, size, size);
+      } else {
+        drawTile(ctx, type, screenX, screenY, size);
       }
       break;
     }

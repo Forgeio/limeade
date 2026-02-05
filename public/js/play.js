@@ -1,21 +1,25 @@
 const TILE_SIZE = 16;
 
+// Bounds
+const BOTTOM_DEATH_BUFFER = 8; // No extra fall buffer
+const TOP_BOUNDARY = -TILE_SIZE; // Stop ascent once 16px above the top of the level
+
 // Physics constants
 const GRAVITY = 0.25;
 const MAX_FALL_SPEED = 6;
 
 // Bubble mode physics
 const BUBBLE_GRAVITY = 0.1;
-const BUBBLE_MAX_FALL_SPEED = 2;
+const BUBBLE_MAX_FALL_SPEED = 1.5;
 const BUBBLE_GROUND_ACCELERATION = 0.08;
 const BUBBLE_AIR_ACCELERATION = 0.05;
 const BUBBLE_GROUND_FRICTION = 0.92;
 const BUBBLE_AIR_FRICTION = 0.95;
 const BUBBLE_ATTACK_FLOAT_SPEED = 3.5;
-const BUBBLE_PLAYER_SPEED = 1;
+const BUBBLE_PLAYER_SPEED = 2;
 const BUBBLE_JUMP_VELOCITY = -4;
 
-// Movement constants
+// Movement constantssss
 const PLAYER_SPEED = 4; 
 const GROUND_ACCELERATION = 0.3;
 const AIR_ACCELERATION = 0.2;
@@ -85,9 +89,11 @@ function normalizeRotation(rot) {
 function parseTileEntry(tile) {
   if (typeof tile === 'string') return { type: tile, rotation: 0 };
   if (tile && typeof tile === 'object') {
+    const { type = '', rotation = 0, ...extra } = tile;
     return {
-      type: tile.type || '',
-      rotation: normalizeRotation(tile.rotation)
+      type,
+      rotation: normalizeRotation(rotation),
+      ...extra
     };
   }
   return { type: '', rotation: 0 };
@@ -98,7 +104,13 @@ function normalizeTiles(rawTiles) {
   Object.entries(rawTiles || {}).forEach(([key, value]) => {
     const info = parseTileEntry(value);
     if (!info.type) return;
-    normalized[key] = isRotatableTile(info.type) ? { type: info.type, rotation: info.rotation } : info.type;
+    const { type, rotation, ...extra } = info;
+    const hasExtras = Object.keys(extra).length > 0;
+    if (isRotatableTile(type) || hasExtras) {
+      normalized[key] = { type, rotation, ...extra };
+    } else {
+      normalized[key] = type;
+    }
   });
   return normalized;
 }
@@ -112,6 +124,8 @@ const game = {
   ctx: null,
   paused: true, // Start paused
   started: false, // Has the level started?
+  introDialogActive: false, // Whether the start dialog is currently gating input
+  waitingForFirstInput: false,
   levelInfo: {}, // Metadata (title, desc, creator)
   userStatus: { has_beaten: false, has_liked: null }, // User interactions
   vibrationsEnabled: true, // Controller vibration preference
@@ -228,6 +242,8 @@ const game = {
   background: null,
   surpriseAnims: [],
   confetti: [],
+  smokeParticles: [],
+  npcs: [],
   assets: {
     playerWalk: null,
     playerJump: null,
@@ -251,6 +267,10 @@ const game = {
     enemyHealth: null,
     enemyWalk: null,
     spikeEnemy: null,
+    npcIdle: null,
+    cannonBase: null,
+    cannonHead: null,
+    cannonBullet: null,
     tilesheet: null,
     tilesheet2: null,
     stoneBrickTilesheet: null,
@@ -308,6 +328,10 @@ function loadAssets() {
     loadImage('graphics/enemy_health.png').then(img => game.assets.enemyHealth = img),
     loadImage('graphics/enemy1_walk.png').then(img => game.assets.enemyWalk = img),
     loadImage('graphics/spike_enemy.png').then(img => game.assets.spikeEnemy = img),
+    loadImage('graphics/npc_1.png').then(img => game.assets.npcIdle = img),
+    loadImage('graphics/cannon_base.png').then(img => game.assets.cannonBase = img),
+    loadImage('graphics/cannon_head.png').then(img => game.assets.cannonHead = img),
+    loadImage('graphics/cannon_bullet.png').then(img => game.assets.cannonBullet = img),
     loadImage('graphics/goal.png').then(img => game.assets.goal = img),
     loadImage('graphics/timer_font.png').then(img => game.assets.timerFont = img),
     loadImage('graphics/tilesheet_1.png').then(img => {
@@ -529,14 +553,13 @@ async function setupControls() {
     // Correctly ignore inputs when typing
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-    // Check for first input to start the game
+    // If we're waiting at the intro dialog, only Enter should unpause
     if (game.waitingForFirstInput && !game.levelCompleted) {
-      // Start on any gameplay key
-      if (e.code === keyMap.left || e.code === keyMap.right || e.code === keyMap.up || 
-          e.code === keyMap.down || e.code === keyMap.jump || e.code === keyMap.attack) {
+      if (e.code === 'Enter') {
+        hidePauseMenu();
         resumeGame();
-        return; // Don't process this input frame
       }
+      return; // Block all other keys while dialog is open
     }
 
     // Ignore game controls if level is completed (except possibly navigation keys if used for menus, but here we want to stop movement)
@@ -716,12 +739,17 @@ function pollGamepad() {
   const jumpNow = buttonPressed(jumpIdx);
   const attackNow = buttonPressed(attackIdx);
 
-  // Check for first input to start the game
+  // While intro dialog is open, ignore gamepad input (resume via Enter/start UI only)
   if (game.waitingForFirstInput && !game.levelCompleted) {
-    if (left || right || up || down || jumpNow || attackNow) {
-      resumeGame();
-      return; // Don't process this input frame
-    }
+    game.gamepad.prevButtons = pad.buttons.map(b => {
+      if (!b) return false;
+      if (b.pressed !== undefined) return b.pressed;
+      if (typeof b.value === 'number') return b.value > 0.5;
+      return false;
+    });
+    game.gamepad.state = { left: false, right: false, up: false, down: false, jump: false, attack: false };
+    updateCombinedInputState();
+    return;
   }
 
   const justJump = jumpNow && !prev[jumpIdx];
@@ -820,17 +848,24 @@ function applyLevelData(level) {
   // Only show start menu for published levels that aren't being tested for publishing
   const shouldShowStartMenu = isPublished && mode !== 'publish';
   
-  // Set initial state - always start paused, unpause on first input
-  game.paused = true;
+  // Set initial state
   game.started = false;
-  game.waitingForFirstInput = true;
+  game.introDialogActive = shouldShowStartMenu;
+  game.waitingForFirstInput = shouldShowStartMenu;
+  game.paused = shouldShowStartMenu;
   
   resetLevelState();
   resetPlayer();
+  // Ensure initial view matches the loaded level before showing any dialog
+  updateCamera();
+  resizeCanvas();
   
   // Show start menu only for published levels (not in test/publish mode)
   if (shouldShowStartMenu) {
     showPauseMenu();
+  } else {
+    hidePauseMenu();
+    resumeGame();
   }
 }
 
@@ -912,9 +947,14 @@ function resetLevelState() {
   game.bubblePowerupList = [];
   game.handPowerupList = [];
   game.bullets = [];
+  game.turretBullets = [];
   game.groundTiles = [];
   game.surpriseAnims = [];
   game.confetti = [];
+  game.npcs = [];
+
+  // Active dialog timers for NPCs
+  // dialogTimer stored on each npc object
 
   game.enemies = [];
   game.collectedCoins = new Set(); // Track collected coins for animation
@@ -941,10 +981,11 @@ function resetLevelState() {
       game.spawn = { x: px, y: py };
     }
 
-    if (type === 'enemy' || type === 'spike_enemy') {
+    if (type === 'enemy' || type === 'spike_enemy' || type === 'turret') {
       const isSpikeEnemy = type === 'spike_enemy';
-      const height = isSpikeEnemy ? 20 : 14;
-      const width = 14;
+      const isTurret = type === 'turret';
+      const height = isSpikeEnemy ? 20 : 16;
+      const width = isTurret ? 16 : 14;
       const originOffsetY = isSpikeEnemy ? (height - TILE_SIZE) : 0; // anchor bottom 16px to tile grid
       
       game.enemies.push({
@@ -953,20 +994,40 @@ function resetLevelState() {
         y: py - originOffsetY,
         width,
         height,
-        velX: ENEMY_BASE_SPEED,
+        velX: isTurret ? 0 : ENEMY_BASE_SPEED,
         velY: 0,
-        direction: -1,
+        direction: isTurret ? 0 : -1,
         onGround: false,
         active: false,
         dead: false,
-        health: isSpikeEnemy ? 2 : 1,
-        maxHealth: isSpikeEnemy ? 2 : 1,
+        health: isTurret ? Infinity : (isSpikeEnemy ? 2 : 1),
+        maxHealth: isTurret ? Infinity : (isSpikeEnemy ? 2 : 1),
         invulnTimer: 0,
         healthDisplayTimer: 0,
         healthFadeTimer: 0,
         knockbackTimer: 0,
         knockbackVelX: 0,
-        turnTimer: 0
+        turnTimer: 0,
+        // Turret-specific properties
+        angle: isTurret ? 0 : undefined,
+        shootTimer: isTurret ? 0 : undefined,
+        shootCooldown: isTurret ? 120 : undefined // 2 seconds at 60fps
+      });
+    }
+
+    if (type === 'npc') {
+      const npcData = parseTileEntry(value);
+      // NPCs are 16x16, anchored to tile
+      game.npcs.push({
+        x: px,
+        y: py,
+        width: 16,
+        height: 16,
+        text: npcData.text || '',
+        animTimer: 0,
+        dialogTimer: 0,
+        dialogFadeTimer: 0,
+        dialogText: npcData.text || ''
       });
     }
 
@@ -1138,6 +1199,7 @@ function resetPlayer() {
   game.player.attackDir = { x: 1, y: 0 };
   game.player.attackLungeVelX = 0;
   game.player.attackLungeVelY = 0;
+  game.player.animTimer = 0;
   
   // Reset timer
   game.timer.started = false;
@@ -1216,6 +1278,13 @@ function update() {
 
   game.animTime = (game.animTime || 0) + TIMESTEP;
 
+  // Once the level is completed, freeze gameplay logic but keep camera updates
+  // so the final view stays centered without processing inputs or collisions.
+  if (game.levelCompleted) {
+    updateCamera();
+    return;
+  }
+
   // Update timer if started and not completed
   if (game.timer.started && !game.levelCompleted && !game.player.dead) {
     game.timer.currentTime = performance.now() - game.timer.startTime;
@@ -1249,13 +1318,98 @@ function update() {
   
   updatePlayer();
   updateEnemies();
+  updateNpcs();
   updateBullets();
+  updateTurretBullets();
   updateCoins();
   updateConfetti();
+  updateSmokeParticles();
   handleAttack();
   checkPlayerHazards();
   checkGoalCollision();
   updateCamera();
+}
+
+function updateTurretBullets() {
+  for (let i = game.turretBullets.length - 1; i >= 0; i--) {
+    const bullet = game.turretBullets[i];
+    
+    // Move bullet
+    bullet.x += bullet.velX;
+    bullet.y += bullet.velY;
+    
+    let destroyed = false;
+    
+    // Check collision with player
+    if (!game.player.dead && rectsIntersect(bullet, game.player)) {
+      if (game.player.invulnTimer === 0) {
+        // Consume powerup before dealing damage (like spikes/enemies)
+        if (game.player.bubbleMode) {
+          game.player.bubbleMode = false;
+          game.player.invulnTimer = INVULN_FRAMES;
+          playSound(game.assets.soundPop || game.assets.soundHurt);
+          vibrateGamepad(150, 0.4, 0.6);
+        } else if (game.player.handPowerupMode) {
+          game.player.handPowerupMode = false;
+          game.player.invulnTimer = INVULN_FRAMES;
+          playSound(game.assets.soundHurt);
+          vibrateGamepad(150, 0.4, 0.6);
+        } else {
+          damagePlayer(bullet);
+        }
+      }
+      destroyed = true;
+    }
+    
+    if (destroyed) {
+      spawnSmoke(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 6);
+      game.turretBullets.splice(i, 1);
+      continue;
+    }
+    
+    // Check if player attacks the bullet
+    if (game.player.attackTimer > 0) {
+      const hurtbox = getHurtbox(game.player);
+      if (rectsIntersect(bullet, hurtbox)) {
+        destroyed = true;
+        playSound(game.assets.soundPunch);
+      }
+    }
+    
+    if (destroyed) {
+      spawnSmoke(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 6);
+      game.turretBullets.splice(i, 1);
+      continue;
+    }
+    
+    // Check collision with tiles
+    const bulletBox = { x: bullet.x, y: bullet.y, width: bullet.width, height: bullet.height };
+    const tiles = getCollidingTiles(bulletBox, true);
+    
+    for (const tile of tiles) {
+      if (isSolidTile(tile.type)) {
+        destroyed = true;
+        break;
+      }
+      
+      if (tile.type === 'spike' && spikeIntersect(bulletBox, tile)) {
+        destroyed = true;
+        break;
+      }
+    }
+    
+    if (destroyed) {
+      spawnSmoke(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 6);
+      game.turretBullets.splice(i, 1);
+      continue;
+    }
+    
+    // Remove bullets that are off screen
+    if (bullet.x < -100 || bullet.x > game.levelWidth * TILE_SIZE + 100 ||
+        bullet.y < -100 || bullet.y > game.levelHeight * TILE_SIZE + 100) {
+      game.turretBullets.splice(i, 1);
+    }
+  }
 }
 
 function updateCoins() {
@@ -1378,6 +1532,28 @@ function updateConfetti() {
   }
 }
 
+function updateSmokeParticles() {
+  for (let i = game.smokeParticles.length - 1; i >= 0; i--) {
+    const p = game.smokeParticles[i];
+    p.life++;
+
+    // Slow down over time (friction)
+    p.vx *= 0.95;
+    p.vy *= 0.95;
+
+    // Slight upward drift
+    p.vy -= 0.05;
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Remove when life expires
+    if (p.life >= p.maxLife) {
+      game.smokeParticles.splice(i, 1);
+    }
+  }
+}
+
 function spawnConfetti(cx, cy, count = 10) {
   const angleSpread = Math.PI * 2;
   for (let i = 0; i < count; i++) {
@@ -1394,11 +1570,30 @@ function spawnConfetti(cx, cy, count = 10) {
   }
 }
 
+function spawnSmoke(cx, cy, count = 5) {
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 0.5 + Math.random() * 1.5;
+    game.smokeParticles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 0.5,
+      life: 0,
+      maxLife: 20 + Math.floor(Math.random() * 15),
+      size: Math.random() < 0.5 ? 1 : 2  // Integer size: 1 or 2 pixels
+    });
+  }
+}
+
 function updatePlayer() {
   if (game.levelCompleted) return;
 
   const player = game.player;
   const maxSpeed = player.bubbleMode ? BUBBLE_PLAYER_SPEED : PLAYER_SPEED;
+
+  // Advance player animation timer using fixed timestep so high refresh displays don't speed it up
+  player.animTimer += TIMESTEP;
 
   //Start timer on first input (keyboard or controller)
   const hasKeyboardInput = game.keys.left || game.keys.right || game.keys.jump;
@@ -1759,12 +1954,22 @@ function handleAttack() {
   const cx = player.x + player.width / 2;
   const cy = player.y + player.height / 2;
 
-  // 1. Check Enemies
+  // NPC interaction: trigger dialog when attacking near NPC (without damaging)
+  for (const npc of game.npcs) {
+    if (rectsIntersect(hurtbox, npc)) {
+      npc.dialogTimer = HEALTH_DISPLAY_FRAMES; // reuse timers for fade lengths
+      npc.dialogFadeTimer = HEALTH_FADE_FRAMES;
+    }
+  }
+
+  // 1. Check Enemies (skip turrets for damage, but track for pogo)
   for (const enemy of game.enemies) {
     if (rectsIntersect(hurtbox, enemy)) {
       const dist = Math.abs((enemy.x + enemy.width / 2) - cx) + Math.abs((enemy.y + enemy.height / 2) - cy);
       if (!hitData || dist < hitData.dist) {
-        hitData = { type: 'enemy', obj: enemy, dist: dist };
+        // Turrets can be pogoed but not damaged
+        const hitType = enemy.type === 'turret' ? 'turret' : 'enemy';
+        hitData = { type: hitType, obj: enemy, dist: dist };
       }
     }
   }
@@ -1792,14 +1997,15 @@ function handleAttack() {
     playSound(game.assets.soundPunch);
 
     // Damage enemies only if not using hand powerup (bullets do the damage instead)
+    // Turrets are invincible and cannot be damaged
     if (hitData.type === 'enemy' && !player.handPowerupMode) {
        const enemy = hitData.obj;
        damageEnemy(enemy, player.attackDir);
     }
 
-    // Check pogo on suitable targets (Enemy or Spike ONLY)
+    // Check pogo on suitable targets (Enemy, Turret, or Spike)
     // We explicitly exclude 'wall' to prevent boosting off normal ground/walls
-    const canPogo = hitData.type === 'enemy' || hitData.type === 'spike';
+    const canPogo = hitData.type === 'enemy' || hitData.type === 'spike' || hitData.type === 'turret';
     if (canPogo && player.attackDir.y > 0 && isImpactFrame) {
          player.velY = BOUNCE_VELOCITY;
          player.onGround = false;
@@ -1970,7 +2176,13 @@ function movePlayerY(dy) {
 
   player.y += dy;
   
-  // No top bound - player can go above level
+  // Clamp top: allow up to 16px above the level, then block
+  if (player.y < TOP_BOUNDARY) {
+    player.y = TOP_BOUNDARY;
+    if (player.velY < 0) {
+      player.velY = 0;
+    }
+  }
   
   player.onGround = false;
   let landedThisFrame = false;
@@ -2040,6 +2252,12 @@ function updateEnemies() {
     
     // Always process dead enemies (falling off screen)
     if (!enemy.active && !enemy.dead) return;
+    
+    // Handle turret behavior
+    if (enemy.type === 'turret' && !enemy.dead) {
+      updateTurret(enemy);
+      return; // Turrets don't move, skip movement logic
+    }
 
     if (enemy.invulnTimer > 0) {
       enemy.invulnTimer--;
@@ -2211,6 +2429,63 @@ function updateEnemies() {
   game.enemies = game.enemies.filter(e => e.y < (game.levelHeight + 5) * TILE_SIZE);
 }
 
+function updateTurret(turret) {
+  // Calculate angle to player
+  const turretCenterX = turret.x + turret.width / 2;
+  const turretCenterY = turret.y + turret.height / 2;
+  const playerCenterX = game.player.x + game.player.width / 2;
+  const playerCenterY = game.player.y + game.player.height / 2;
+  
+  const dx = playerCenterX - turretCenterX;
+  const dy = playerCenterY - turretCenterY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // Only track and shoot if player is within range (about 15 tiles)
+  const shootRange = 15 * TILE_SIZE;
+  
+  if (distance < shootRange && !game.player.dead) {
+    // Update angle to face player
+    turret.angle = Math.atan2(dy, dx);
+    
+    // Handle shooting
+    if (turret.shootTimer > 0) {
+      turret.shootTimer--;
+    } else {
+      // Shoot bullet
+      const bulletSpeed = 4;
+      const spawnDistance = 12; // Spawn bullet slightly away from turret center
+      
+      game.turretBullets.push({
+        x: turretCenterX + Math.cos(turret.angle) * spawnDistance - 4,
+        y: turretCenterY + Math.sin(turret.angle) * spawnDistance - 4,
+        width: 8,
+        height: 8,
+        velX: Math.cos(turret.angle) * bulletSpeed,
+        velY: Math.sin(turret.angle) * bulletSpeed,
+        angle: turret.angle
+      });
+      
+      turret.shootTimer = turret.shootCooldown;
+      playSound(game.assets.soundShoot);
+    }
+  }
+}
+
+function updateNpcs() {
+  // NPCs are stationary; we only manage animation timers and dialog fade timers
+  game.npcs.forEach((npc) => {
+    npc.animTimer = (npc.animTimer || 0) + TIMESTEP;
+    if (npc.dialogTimer > 0) {
+      npc.dialogTimer--;
+      if (npc.dialogTimer <= HEALTH_FADE_FRAMES) {
+        npc.dialogFadeTimer = npc.dialogTimer;
+      } else {
+        npc.dialogFadeTimer = HEALTH_FADE_FRAMES;
+      }
+    }
+  });
+}
+
 function updateBullets() {
   for (let i = game.bullets.length - 1; i >= 0; i--) {
     const bullet = game.bullets[i];
@@ -2224,6 +2499,7 @@ function updateBullets() {
     // Check collision with enemies
     for (const enemy of game.enemies) {
       if (enemy.dead) continue;
+      if (enemy.type === 'turret') continue; // Turrets are invincible to bullets
       if (rectsIntersect(bullet, enemy)) {
         // Damage enemy
         const attackDir = { x: Math.sign(bullet.velX) || 0, y: Math.sign(bullet.velY) || 0 };
@@ -2235,6 +2511,7 @@ function updateBullets() {
     }
     
     if (destroyed) {
+      spawnSmoke(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 5);
       game.bullets.splice(i, 1);
       continue;
     }
@@ -2284,6 +2561,7 @@ function updateBullets() {
     }
     
     if (destroyed) {
+      spawnSmoke(bullet.x + bullet.width / 2, bullet.y + bullet.height / 2, 5);
       game.bullets.splice(i, 1);
       continue;
     }
@@ -2329,7 +2607,7 @@ function checkPlayerHazards() {
   const player = game.player;
 
   // Check bottom bound (kills player only when completely out of bounds)
-  const bottomBound = game.levelHeight * TILE_SIZE;
+  const bottomBound = game.levelHeight * TILE_SIZE + BOTTOM_DEATH_BUFFER;
   if (player.y > bottomBound) {
     killPlayer();
     return;
@@ -2532,8 +2810,11 @@ function render() {
   renderBackgrounds();
   renderTiles();
   renderConfetti();
+  renderSmokeParticles();
   renderEnemies();
+  renderNpcs();
   renderBullets();
+  renderTurretBullets();
   renderPlayer();
   renderHurtbox();
   renderTimer();
@@ -2921,6 +3202,29 @@ function renderConfetti() {
   });
 }
 
+function renderSmokeParticles() {
+  const ctx = game.ctx;
+
+  game.smokeParticles.forEach(p => {
+    const screenX = Math.round(p.x - game.camera.x);
+    const screenY = Math.round(p.y - game.camera.y);
+    
+    // Fade out over lifetime
+    const alpha = Math.max(0, 1 - (p.life / p.maxLife));
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.6; // Max 60% opacity for smoke
+    ctx.fillStyle = '#555555';
+    
+    // Draw pixelated square smoke particle (scale up for visibility)
+    const pixelSize = p.size * 4; // Scale 1-2 pixel size to 4-8 screen pixels
+    ctx.fillRect(screenX - pixelSize / 2, screenY - pixelSize / 2, pixelSize, pixelSize);
+    
+    ctx.restore();
+  });
+}
+
 // Draw a single 8x8 quadrant from the autotile sheet
 function drawAutoTileQuadrant(ctx, tilesheet, mask, quadrant, destX, destY) {
   if (mask === 0) return;
@@ -2971,6 +3275,62 @@ function renderEnemies() {
     // Only animate if active/close
     if (!enemy.active && !enemy.dead) return;
     
+    // Calculate screen position first (needed by all enemy types)
+    const screenX = Math.round(enemy.x - game.camera.x);
+    const screenY = Math.round(enemy.y - game.camera.y);
+    
+    // Handle turret rendering separately
+    if (enemy.type === 'turret') {
+      const baseSprite = game.assets.cannonBase;
+      const headSprite = game.assets.cannonHead;
+      
+      if (baseSprite && headSprite) {
+        ctx.save();
+        
+        if (enemy.invulnTimer > 0) {
+          ctx.globalAlpha = 0.6;
+        }
+        
+        // Draw base (no rotation)
+        ctx.drawImage(baseSprite, 0, 0, 16, 16, screenX, screenY, enemy.width, enemy.height);
+        
+        // Draw head (rotated)
+        const centerX = screenX + enemy.width / 2;
+        const centerY = screenY + enemy.height / 2;
+        ctx.translate(centerX, centerY);
+        ctx.rotate(enemy.angle);
+        ctx.drawImage(headSprite, 0, 0, 16, 16, -enemy.width / 2, -enemy.height / 2, enemy.width, enemy.height);
+        
+        ctx.restore();
+      } else {
+        // Fallback rendering
+        ctx.fillStyle = '#666';
+        ctx.fillRect(screenX, screenY, enemy.width, enemy.height);
+      }
+      
+      // Render health pips for turret (skip for invincible turrets)
+      if (enemy.type !== 'turret' && game.assets.enemyHealth && enemy.healthDisplayTimer > 0 && !enemy.dead) {
+        const pipW = 6;
+        const pipH = 6;
+        const padding = -1;
+        const totalWidth = enemy.maxHealth * (pipW + padding) - padding;
+        const startX = Math.round(screenX + enemy.width / 2 - totalWidth / 2);
+        const startY = Math.round(screenY - pipH - 6);
+
+        const alpha = enemy.healthFadeTimer > 0 ? Math.max(0, enemy.healthFadeTimer / HEALTH_FADE_FRAMES) : 1;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        for (let i = 0; i < enemy.maxHealth; i++) {
+          const filled = i < enemy.health;
+          const frameX = filled ? 0 : 6;
+          ctx.drawImage(game.assets.enemyHealth, frameX, 0, pipW, pipH, startX + i * (pipW + padding), startY, pipW, pipH);
+        }
+        ctx.restore();
+      }
+      
+      return; // Skip normal enemy rendering
+    }
+    
     const sprite = enemy.type === 'spike_enemy' ? game.assets.spikeEnemy : game.assets.enemyWalk;
 
     // Use global animation time for sync; honor full sprite sheet width (16px per frame)
@@ -2980,9 +3340,6 @@ function renderEnemies() {
     if (enemy.dead) {
       frame = Math.min(frameCount - 1, 1); // prefer second frame for dead, clamp to available frames
     }
-    
-    const screenX = Math.round(enemy.x - game.camera.x);
-    const screenY = Math.round(enemy.y - game.camera.y);
     
     if (sprite) {
       ctx.save();
@@ -3025,6 +3382,87 @@ function renderEnemies() {
   });
 }
 
+function renderNpcs() {
+  const ctx = game.ctx;
+  const frameRate = 6; // Slightly slower idle bob
+
+  game.npcs.forEach((npc) => {
+    const sprite = game.assets.npcIdle;
+    const frameCount = sprite && sprite.width ? Math.max(1, Math.floor(sprite.width / 16)) : 1;
+    let frame = Math.floor(npc.animTimer / (1000 / frameRate)) % frameCount;
+
+    const screenX = Math.round(npc.x - game.camera.x);
+    const screenY = Math.round(npc.y - game.camera.y);
+
+    if (sprite) {
+      ctx.drawImage(sprite, frame * 16, 0, 16, 16, screenX, screenY, 16, 16);
+    } else {
+      drawTile(ctx, 'npc', screenX, screenY, TILE_SIZE);
+    }
+
+    // Dialog bubble
+    if (npc.dialogTimer > 0 && npc.dialogText) {
+      const alpha = npc.dialogFadeTimer > 0 ? Math.max(0, npc.dialogFadeTimer / HEALTH_FADE_FRAMES) : 1;
+      const padding = 4;
+      const maxWidth = 140;
+      const text = npc.dialogText;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.font = '12px Arial';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = 'white';
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 2;
+
+      // Split text into lines that fit maxWidth
+      const words = text.split(' ');
+      const lines = [];
+      let line = '';
+      for (const w of words) {
+        const test = line ? line + ' ' + w : w;
+        if (ctx.measureText(test).width > maxWidth) {
+          if (line) lines.push(line);
+          line = w;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+
+      const lineHeight = 16;
+      const textWidth = Math.min(maxWidth, Math.max(...lines.map(l => ctx.measureText(l).width)));
+      const textHeight = lines.length * lineHeight;
+
+      const boxX = screenX - 8;
+      const boxY = screenY - textHeight - padding * 2 - 10;
+      const boxW = Math.max(32, textWidth + padding * 2);
+      const boxH = textHeight + padding * 2;
+
+      // Bubble background
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      // Text lines
+      ctx.fillStyle = '#111';
+      lines.forEach((l, idx) => {
+        ctx.fillText(l, boxX + padding, boxY + padding + idx * lineHeight);
+      });
+
+      // Small pointer triangle
+      ctx.beginPath();
+      ctx.moveTo(screenX + 8, boxY + boxH);
+      ctx.lineTo(screenX + 16, boxY + boxH);
+      ctx.lineTo(screenX + 12, boxY + boxH + 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  });
+}
+
 function renderBullets() {
   const ctx = game.ctx;
   
@@ -3048,7 +3486,7 @@ function renderBullets() {
       }
       // Right (dirX > 0) is default, no rotation needed
       
-      ctx.drawImage(game.assets.bullet, 0, 0, 8, 8, -4, -4, 8, 8);
+      ctx.drawImage(game.assets.bullet, 0, 0, 16, 16, -8, -8, 16, 16);
       ctx.restore();
     } else {
       // Fallback
@@ -3058,12 +3496,35 @@ function renderBullets() {
   }
 }
 
+function renderTurretBullets() {
+  const ctx = game.ctx;
+  
+  for (const bullet of game.turretBullets) {
+    const screenX = Math.round(bullet.x - game.camera.x);
+    const screenY = Math.round(bullet.y - game.camera.y);
+    
+    if (game.assets.cannonBullet) {
+      ctx.save();
+      const centerX = screenX + bullet.width / 2;
+      const centerY = screenY + bullet.height / 2;
+      ctx.translate(centerX, centerY);
+      ctx.rotate(bullet.angle);
+      ctx.drawImage(game.assets.cannonBullet, 0, 0, 16, 16, -8, -8, 16, 16);
+      ctx.restore();
+    } else {
+      // Fallback
+      ctx.fillStyle = '#ff0000';
+      ctx.fillRect(screenX, screenY, bullet.width, bullet.height);
+    }
+  }
+}
+
 function renderPlayer() {
   const ctx = game.ctx;
   const p = game.player;
-
-  // Update Animation Timer
-  p.animTimer++;
+  // Animation frame durations (ms) derived from 60fps frame counts
+  const RUN_FRAME_MS = 5 * TIMESTEP;   // ~83ms per frame
+  const IDLE_FRAME_MS = 40 * TIMESTEP; // ~667ms per frame
 
   let sprite = game.assets.playerWalk;
   let frame = 0;
@@ -3085,13 +3546,11 @@ function renderPlayer() {
   } else if (Math.abs(p.velX) > 0.1) {
     sprite = game.assets.playerWalk;
     // 3 frames loop
-    const runFrameRate = 5; // Faster animation
-    frame = Math.floor(p.animTimer / runFrameRate) % 3;
+    frame = Math.floor(p.animTimer / RUN_FRAME_MS) % 3;
   } else {
     // Idle
     sprite = game.assets.playerIdle;
-    const idleFrameRate = 40; // Slow animation
-    frame = Math.floor(p.animTimer / idleFrameRate) % 2; 
+    frame = Math.floor(p.animTimer / IDLE_FRAME_MS) % 2; 
   }
 
   const screenX = Math.round(p.x - game.camera.x);
@@ -3657,6 +4116,7 @@ function pauseGame() {
 
 function resumeGame() {
   game.paused = false;
+  game.introDialogActive = false;
   game.waitingForFirstInput = false;
   
   // Clear all input states to prevent button presses from transferring to gameplay

@@ -209,6 +209,9 @@ async function loadTabContent(tab, userId) {
 function displayLevels(levels) {
   const container = document.getElementById('cardsContainer');
   
+  // Ensure container uses grid layout for published levels
+  container.className = 'cards-grid';
+  
   if (levels.length === 0) {
     container.innerHTML = `
       <div style="grid-column: 1 / -1; text-align: center; color: var(--text-secondary); padding: 48px;">
@@ -270,9 +273,12 @@ async function deleteLevel(e, id) {
 function displayDrafts(drafts) {
   const container = document.getElementById('cardsContainer');
   
+  // Change container to use vertical layout
+  container.className = 'drafts-list';
+  
   if (drafts.length === 0) {
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; color: var(--text-secondary); padding: 48px;">
+      <div style="text-align: center; color: var(--text-secondary); padding: 48px;">
         <svg class="icon" style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5;"><use href="icons.svg#icon-videogame"/></svg>
         <p>No drafts yet. Create one from the editor!</p>
       </div>
@@ -288,34 +294,23 @@ function displayDrafts(drafts) {
       year: 'numeric' 
     });
     
-    const thumbUrl = draft.thumbnail_path || '';
-    const imgStyle = thumbUrl 
-      ? `background-image: url('${thumbUrl}'); background-size: cover; background-position: center;`
-      : '';
-    const iconStyle = thumbUrl ? 'display: none;' : 'width: 48px; height: 48px; opacity: 0.3;';
-    
     return `
-      <div class="level-card">
-        <span class="draft-badge draft-badge-overlay">Draft</span>
-        <button class="delete-btn level-card-delete-overlay" onclick="deleteLevel(event, ${draft.id})" title="Delete Draft">
+      <div class="draft-card-horizontal" onclick="editDraft(event, ${draft.id})">
+        <button class="delete-btn" onclick="deleteLevel(event, ${draft.id})" title="Delete Draft">
           <svg class="icon"><use href="icons.svg#icon-delete"/></svg>
         </button>
-        <div class="level-card-image draft-placeholder" style="${imgStyle}">
-          <svg class="icon" style="${iconStyle}"><use href="icons.svg#icon-edit"/></svg>
-        </div>
-        <div class="level-card-content">
-          <div class="draft-card-row">
-            <div class="draft-card-info">
-              <div class="level-card-title-row">
-                <h3 class="level-card-title">${escapeHtml(draft.title || 'Untitled Draft')}</h3>
-              </div>
-              <p class="level-card-description">Last edited: ${formattedDate}</p>
-            </div>
-            <div class="level-card-footer draft-card-footer">
-              <button class="draft-edit-btn" onclick="editDraft(event, ${draft.id})">Edit</button>
-              <button class="draft-publish-btn" onclick="publishDraft(event, ${draft.id})">Publish</button>
-            </div>
+        
+        <div class="draft-card-main">
+          <div class="draft-card-header">
+            <h3 class="level-card-title">${escapeHtml(draft.title || 'Untitled Draft')}</h3>
+            <span class="draft-badge">Draft</span>
           </div>
+          <p class="draft-card-date">Last edited: ${formattedDate}</p>
+        </div>
+        
+        <div class="draft-card-actions">
+          <button class="draft-edit-btn" onclick="editDraft(event, ${draft.id})">Edit</button>
+          <button class="draft-publish-btn" onclick="publishDraft(event, ${draft.id})">Publish</button>
         </div>
       </div>
     `;
