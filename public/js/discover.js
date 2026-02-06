@@ -5,9 +5,26 @@ let currentPage = 1;
 const itemsPerPage = 12;
 
 // Initialize page
-window.addEventListener('DOMContentLoaded', () => {
+function initDiscoverPage() {
+  const pageRoot = document.querySelector('#spa-content[data-page="discover"]');
+  if (!pageRoot) return;
+
+  const container = document.getElementById('cardsContainer');
+  if (!container) return;
+
+  currentTab = 'hot';
+  currentPage = 1;
+
+  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
+    tabBtn.classList.remove('active');
+  });
+  document.querySelector('[data-tab="hot"]')?.classList.add('active');
+
   loadLevels();
-});
+}
+
+window.addEventListener('DOMContentLoaded', initDiscoverPage);
+window.addEventListener('spa:navigate', initDiscoverPage);
 
 // Switch between tabs
 function switchTab(tab) {
@@ -58,7 +75,11 @@ async function loadLevels() {
       card.addEventListener('click', (e) => {
         if (!e.target.closest('.play-btn')) {
           // Navigate to level detail page
-          window.location.href = `/level?id=${levelId}`;
+          if (typeof window.spaNavigate === 'function') {
+            window.spaNavigate(`/level?id=${levelId}`);
+          } else {
+            window.location.href = `/level?id=${levelId}`;
+          }
         }
       });
     });
@@ -175,6 +196,8 @@ function updatePagination(totalItems) {
   const pageInfo = document.getElementById('pageInfo');
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
+
+  if (!pageInfo || !prevBtn || !nextBtn) return;
   
   pageInfo.textContent = `Page ${currentPage} of ${totalPages || 1}`;
   prevBtn.disabled = currentPage <= 1;
@@ -198,5 +221,9 @@ function nextPage() {
 
 // Play level function
 function playLevel(levelId) {
-  window.location.href = `/play?id=${levelId}`;
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate(`/play?id=${levelId}`);
+  } else {
+    window.location.href = `/play?id=${levelId}`;
+  }
 }

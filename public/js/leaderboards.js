@@ -5,9 +5,23 @@ let currentPage = 1;
 const itemsPerPage = 15;
 
 // Initialize page
-window.addEventListener('DOMContentLoaded', () => {
+function initLeaderboardsPage() {
+  const container = document.getElementById('cardsContainer');
+  if (!container) return;
+
+  currentTab = 'skill-rating';
+  currentPage = 1;
+
+  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
+    tabBtn.classList.remove('active');
+  });
+  document.querySelector('[data-tab="skill-rating"]')?.classList.add('active');
+
   loadPlayers();
-});
+}
+
+window.addEventListener('DOMContentLoaded', initLeaderboardsPage);
+window.addEventListener('spa:navigate', initLeaderboardsPage);
 
 // Switch between tabs
 function switchTab(tab) {
@@ -190,5 +204,9 @@ function nextPage() {
 
 // View player profile
 function viewProfile(playerId) {
-  window.location.href = `/profile?id=${playerId}`;
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate(`/profile?id=${playerId}`);
+  } else {
+    window.location.href = `/profile?id=${playerId}`;
+  }
 }

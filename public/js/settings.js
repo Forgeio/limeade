@@ -86,7 +86,9 @@ function stopGamepadCapture() {
     }
 }
 
-document.addEventListener('DOMContentLoaded', async () => {
+async function initSettingsPage() {
+    if (!document.getElementById('settingsAvatar')) return;
+
     // Load user data from API
     try {
         const response = await fetch('/auth/user');
@@ -97,7 +99,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
         console.error('Error loading user:', err);
     }
-});
+}
+
+document.addEventListener('DOMContentLoaded', initSettingsPage);
+window.addEventListener('spa:navigate', initSettingsPage);
 
 function populateSettings(user) {
     const usernameInput = document.getElementById('usernameInput');

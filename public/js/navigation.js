@@ -1,7 +1,7 @@
 // Common navigation functions
 
-// Check authentication on page load
-window.addEventListener('DOMContentLoaded', async () => {
+// Check authentication on page load / SPA navigation
+async function initNavigation() {
   // Sync session with backend
   try {
     const res = await fetch('/auth/user');
@@ -35,7 +35,10 @@ window.addEventListener('DOMContentLoaded', async () => {
     updateUserDisplay(user);
     setupDropdown();
   }
-});
+}
+
+window.addEventListener('DOMContentLoaded', initNavigation);
+window.addEventListener('spa:navigate', initNavigation);
 
 // Check if user is logged in
 function checkAuth() {
@@ -69,6 +72,9 @@ function updateUserDisplay(user) {
 
 // Setup dropdown menu
 function setupDropdown() {
+  if (setupDropdown.bound) return;
+  setupDropdown.bound = true;
+
   const userSection = document.getElementById('userSection');
   const dropdownMenu = document.getElementById('dropdownMenu');
   
@@ -87,19 +93,36 @@ function setupDropdown() {
 
 // Navigation functions
 function navigateTo(page) {
-  window.location.href = '/' + page.replace('.html', '');
+  const target = '/' + page.replace('.html', '');
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate(target);
+  } else {
+    window.location.href = target;
+  }
 }
 
 function createLevel() {
-  window.location.href = '/editor';
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate('/editor');
+  } else {
+    window.location.href = '/editor';
+  }
 }
 
 function openProfile() {
-  window.location.href = '/profile';
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate('/profile');
+  } else {
+    window.location.href = '/profile';
+  }
 }
 
 function openSettings() {
-  window.location.href = '/settings';
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate('/settings');
+  } else {
+    window.location.href = '/settings';
+  }
 }
 
 function logout() {

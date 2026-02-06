@@ -417,37 +417,63 @@
 </head>
 <body>
 
-  <!-- Hidden SVG Icons -->
-  <svg display="none">
-    <symbol id="icon-arrow-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
-    <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
-    <symbol id="icon-thumb-up" viewBox="0 0 24 24"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/></symbol>
-    <symbol id="icon-thumb-down" viewBox="0 0 24 24"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v1.91l.01.01L1 14c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></symbol>
-    <symbol id="icon-time" viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8 8-8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></symbol>
-  </svg>
-
   <nav class="navbar">
-    <div class="nav-brand">
-      <img src="graphics/favicon.png" alt="Logo" class="nav-logo">
-      <span>Limeade</span>
+    <div class="nav-left">
+      <a href="/" class="site-brand">
+        <img src="graphics/logo.png" alt="Limeade" class="site-logo">
+      </a>
+      <div class="search-container">
+        <svg class="icon"><use href="icons.svg#icon-search"/></svg>
+        <input type="text" class="search-input" placeholder="Search levels..." id="searchInput">
+      </div>
     </div>
-    <div class="nav-links">
-      <a href="discover" class="nav-link">Discover</a>
-      <a href="leaderboards" class="nav-link">Ranking</a>
-      <a href="editor" class="nav-link">Create</a>
+    <div class="nav-center">
+      <button class="nav-btn" data-nav="discover" onclick="navigateTo('discover')">
+        <svg class="icon"><use href="icons.svg#icon-public"/></svg>
+        <span>Discover</span>
+      </button>
+      <button class="nav-btn" data-nav="leaderboards" onclick="navigateTo('leaderboards')">
+        <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
+        <span>Leaderboards</span>
+      </button>
     </div>
-    <div class="nav-user" id="userSection">
-      <span class="user-name" id="userName">Guest</span>
-      <div class="user-avatar" id="userAvatar">?</div>
-      <div class="dropdown-menu" id="dropdownMenu">
-        <div class="dropdown-item" onclick="openProfile()">Profile</div>
-        <div class="dropdown-item" onclick="openSettings()">Settings</div>
-        <div class="dropdown-item" onclick="logout()">Logout</div>
+    <div class="nav-right">
+      <div class="user-section" id="userSection">
+        <span class="user-name" id="userName">Guest User</span>
+        <div class="user-avatar" id="userAvatar">GU</div>
+        <div class="dropdown-menu" id="dropdownMenu">
+          <button class="dropdown-item create" onclick="createLevel()">
+            <svg class="icon"><use href="icons.svg#icon-add"/></svg>
+            <span>Create</span>
+          </button>
+          <button class="dropdown-item" onclick="openProfile()">
+            <svg class="icon"><use href="icons.svg#icon-person"/></svg>
+            <span>Profile</span>
+          </button>
+          <button class="dropdown-item" onclick="openSettings()">
+            <svg class="icon"><use href="icons.svg#icon-settings"/></svg>
+            <span>Settings</span>
+          </button>
+          <button class="dropdown-item" onclick="logout()">
+            <svg class="icon"><use href="icons.svg#icon-logout"/></svg>
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
     </div>
   </nav>
 
-  <div class="level-container">
+  <div id="spa-content" data-page="level">
+    <!-- Hidden SVG Icons -->
+    <svg display="none">
+      <symbol id="icon-arrow-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+      <symbol id="icon-thumb-up" viewBox="0 0 24 24"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/></symbol>
+      <symbol id="icon-thumb-down" viewBox="0 0 24 24"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v1.91l.01.01L1 14c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></symbol>
+      <symbol id="icon-time" viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8 8-8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></symbol>
+    </svg>
+
+    <div class="level-container">
     <div onclick="goBack()" class="back-btn">
       <svg class="icon"><use href="#icon-arrow-back"/></svg>
       Back
@@ -556,9 +582,11 @@
       </div>
     </div>
 
+    </div>
   </div>
 
   <script src="js/navigation.js"></script>
+  <script src="js/spa.js"></script>
   <script src="js/level.js"></script>
 </body>
 </html>

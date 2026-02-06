@@ -3,12 +3,22 @@
 let currentTab = 'published';
 let deleteConfirmResolver = null;
 
-document.addEventListener('DOMContentLoaded', async () => {
+function navigateInternal(url) {
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate(url);
+  } else {
+    window.location.href = url;
+  }
+}
+
+async function initProfilePage() {
+  const profileHeader = document.querySelector('.profile-header');
+  if (!profileHeader) return;
+
     console.log('[Profile] DOMContentLoaded fired');
     
     // Show loading state
-    const profileHeader = document.querySelector('.profile-header');
-    if (profileHeader) profileHeader.style.opacity = '0';
+  if (profileHeader) profileHeader.style.opacity = '0';
     
     // Wait for navigation.js to sync user from backend first
     // by fetching user directly here as well
@@ -71,23 +81,26 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         } else {
             // User not found, redirect home
-            window.location.href = '/';
+            navigateInternal('/');
             return;
         }
     } else if (currentUser && currentUser.id) {
         // Redirect to own profile with ID in URL for consistency
         console.log('[Profile] Redirecting to own profile with ID:', currentUser.id);
-        window.location.href = `/profile?id=${currentUser.id}`;
+        navigateInternal(`/profile?id=${currentUser.id}`);
         return;
     } else {
         // No ID and not logged in 
         console.log('[Profile] No user, redirecting to login');
-        window.location.href = '/login';
+        navigateInternal('/login');
         return;
     }
 
   setupDeleteConfirmModal();
-});
+}
+
+document.addEventListener('DOMContentLoaded', initProfilePage);
+window.addEventListener('spa:navigate', initProfilePage);
 
 async function fetchUserProfile(id) {
     try {
@@ -229,7 +242,7 @@ function displayLevels(levels) {
       : `<div class="placeholder-image"><svg class="icon" style="width: 48px; height: 48px; opacity: 0.3;"><use href="icons.svg#icon-videogame"/></svg></div>`;
       
     return `
-    <div class="card" onclick="window.location.href='/play?id=${level.id}'">
+    <div class="card" onclick="navigateInternal('/play?id=${level.id}')">
       <div class="card-image">
         ${imgHtml}
       </div>
@@ -320,16 +333,18 @@ function displayDrafts(drafts) {
 function publishDraft(e, id) {
   e.stopPropagation();
   // Send user to play mode to verify level before publishing
-  window.location.href = `/play?id=${id}&mode=publish`;
+  navigateInternal(`/play?id=${id}&mode=publish`);
 }
 
 function editDraft(e, id) {
   e.stopPropagation();
-  window.location.href = `/editor?id=${id}`;
+  navigateInternal(`/editor?id=${id}`);
 }
 
 function setupDeleteConfirmModal() {
   const modal = document.getElementById('deleteConfirmModal');
+  if (!modal || modal.dataset.bound === 'true') return;
+  modal.dataset.bound = 'true';
   if (!modal) return;
 
   const confirmBtn = document.getElementById('deleteConfirmBtn');

@@ -36,11 +36,11 @@
       </div>
     </div>
     <div class="nav-center">
-      <button class="nav-btn" onclick="navigateTo('discover')">
+      <button class="nav-btn" data-nav="discover" onclick="navigateTo('discover')">
         <svg class="icon"><use href="icons.svg#icon-public"/></svg>
         <span>Discover</span>
       </button>
-      <button class="nav-btn" onclick="navigateTo('leaderboards')">
+      <button class="nav-btn" data-nav="leaderboards" onclick="navigateTo('leaderboards')">
         <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
         <span>Leaderboards</span>
       </button>
@@ -81,6 +81,7 @@
 
   <script src="js/auth.js"></script>
   <script src="js/navigation.js"></script>
+  <script src="js/spa.js"></script>
   <script src="js/graphics.js"></script>
   <script src="js/play.js"></script>
   <script>

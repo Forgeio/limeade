@@ -2,26 +2,39 @@
 let currentLevelId = null;
 let currentLeaderboardType = 'fastest_clear';
 
-document.addEventListener('DOMContentLoaded', () => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const id = urlParams.get('id');
+function initLevelPage() {
+    if (!document.getElementById('levelTitle')) return;
 
-  if (!id) {
-    window.location.href = '/discover';
-    return;
-  }
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
 
-  currentLevelId = id;
-  loadLevelDetails(id);
-  loadUserStatus(id);
-  loadLeaderboard(id, 'fastest_clear');
-});
+    if (!id) {
+            if (typeof window.spaNavigate === 'function') {
+                window.spaNavigate('/discover');
+            } else {
+                window.location.href = '/discover';
+            }
+        return;
+    }
+
+    currentLevelId = id;
+    loadLevelDetails(id);
+    loadUserStatus(id);
+    loadLeaderboard(id, 'fastest_clear');
+}
+
+document.addEventListener('DOMContentLoaded', initLevelPage);
+window.addEventListener('spa:navigate', initLevelPage);
 
 function goBack() {
   if (document.referrer.includes(window.location.host)) {
     window.history.back();
   } else {
-    window.location.href = '/discover';
+        if (typeof window.spaNavigate === 'function') {
+            window.spaNavigate('/discover');
+        } else {
+            window.location.href = '/discover';
+        }
   }
 }
 
@@ -212,7 +225,11 @@ function renderLevel(level) {
 }
 
 function playLevel() {
-  window.location.href = `/play?id=${currentLevelId}`;
+    if (typeof window.spaNavigate === 'function') {
+        window.spaNavigate(`/play?id=${currentLevelId}`);
+    } else {
+        window.location.href = `/play?id=${currentLevelId}`;
+    }
 }
 
 function formatTime(ms) {

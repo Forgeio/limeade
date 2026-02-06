@@ -110,11 +110,11 @@
       </div>
     </div>
     <div class="nav-center">
-      <button class="nav-btn" onclick="navigateTo('discover')">
+      <button class="nav-btn" data-nav="discover" onclick="navigateTo('discover')">
         <svg class="icon"><use href="icons.svg#icon-public"/></svg>
         <span>Discover</span>
       </button>
-      <button class="nav-btn" onclick="navigateTo('leaderboards')">
+      <button class="nav-btn" data-nav="leaderboards" onclick="navigateTo('leaderboards')">
         <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
         <span>Leaderboards</span>
       </button>
@@ -146,7 +146,8 @@
   </nav>
 
   <!-- Main Content -->
-  <div class="main-content">
+  <div id="spa-content" data-page="profile">
+    <div class="main-content">
     <div class="profile-header">
       <div class="profile-avatar-xl" id="profileAvatar">GU</div>
       <div class="profile-info">
@@ -196,26 +197,28 @@
       </div>
     </div>
 
-  </div>
+    </div>
 
-  <!-- Delete Confirm Modal -->
-  <div class="modal" id="deleteConfirmModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Delete level?</h2>
-        <button class="close-btn" id="deleteCloseBtn">&times;</button>
-      </div>
-      <div class="confirm-body">
-        <p class="confirm-message" id="deleteConfirmMessage">Are you sure you want to delete this level? This cannot be undone.</p>
-        <div class="modal-actions">
-          <button class="modal-btn" id="deleteCancelBtn">Cancel</button>
-          <button class="modal-btn danger" id="deleteConfirmBtn">Delete</button>
+    <!-- Delete Confirm Modal -->
+    <div class="modal" id="deleteConfirmModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Delete level?</h2>
+          <button class="close-btn" id="deleteCloseBtn">&times;</button>
+        </div>
+        <div class="confirm-body">
+          <p class="confirm-message" id="deleteConfirmMessage">Are you sure you want to delete this level? This cannot be undone.</p>
+          <div class="modal-actions">
+            <button class="modal-btn" id="deleteCancelBtn">Cancel</button>
+            <button class="modal-btn danger" id="deleteConfirmBtn">Delete</button>
+          </div>
         </div>
       </div>
     </div>
   </div>
 
   <script src="js/navigation.js"></script>
+  <script src="js/spa.js"></script>
   <script src="js/profile.js"></script>
 </body>
 </html>
