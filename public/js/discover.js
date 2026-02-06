@@ -9,6 +9,12 @@ const itemsPerPage = 12;
 window.addEventListener('DOMContentLoaded', () => {
   loadLevels();
   
+  // Set the correct radio button based on currentTab
+  const sortRadios = document.querySelectorAll('input[name="sort"]');
+  sortRadios.forEach(radio => {
+    radio.checked = radio.value === currentTab;
+  });
+  
   // Add search input listener
   const searchInput = document.getElementById('searchInput');
   if (searchInput) {

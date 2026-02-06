@@ -36,9 +36,11 @@ async function migrateWorldRecordToDecimal() {
     }
 
     console.log('\n✅ Migration complete!');
+    await db.end();
     process.exit(0);
   } catch (err) {
     console.error('❌ Error during migration:', err);
+    await db.end();
     process.exit(1);
   }
 }

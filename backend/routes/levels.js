@@ -73,7 +73,9 @@ router.get('/', async (req, res) => {
       queryParams.push(dateValue);
     }
     
-    const whereClause = (dateFilter || '') + (searchFilter || '');
+    // Build WHERE clause from components
+    const whereComponents = [dateFilter, searchFilter].filter(Boolean);
+    const whereClause = whereComponents.join(' ');
     
     // orderBy is from a controlled whitelist, safe to interpolate
     const result = await db.query(
