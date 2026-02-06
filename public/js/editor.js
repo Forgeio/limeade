@@ -2715,7 +2715,8 @@ function clampCamera() {
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', initEditor);
 window.addEventListener('spa:navigate', (e) => {
-  if (e.detail.path.startsWith('/editor')) {
+  const currentPage = document.querySelector('#spa-content')?.dataset.page;
+  if (e.detail.path.startsWith('/editor') && currentPage === 'editor') {
     initEditor();
   }
 });

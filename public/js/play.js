@@ -4478,7 +4478,8 @@ function updatePauseMenuContent() {
 
 document.addEventListener('DOMContentLoaded', initGame);
 window.addEventListener('spa:navigate', (e) => {
-  if (e.detail.path.startsWith('/play')) {
+  const currentPage = document.querySelector('#spa-content')?.dataset.page;
+  if (e.detail.path.startsWith('/play') && currentPage === 'play') {
     initGame();
   }
 });
