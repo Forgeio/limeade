@@ -27,7 +27,11 @@ async function initNavigation() {
   
   // Redirect to login if not authenticated (except when already on login page)
   if (!user && !isLoginPage) {
-    window.location.href = '/login';
+    if (typeof window.spaNavigate === 'function') {
+      window.spaNavigate('/login');
+    } else {
+      window.location.href = '/login';
+    }
     return;
   }
   
@@ -127,5 +131,9 @@ function openSettings() {
 
 function logout() {
   localStorage.removeItem('user');
-  window.location.href = '/login';
+  if (typeof window.spaNavigate === 'function') {
+    window.spaNavigate('/login');
+  } else {
+    window.location.href = '/login';
+  }
 }

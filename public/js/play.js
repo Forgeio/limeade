@@ -416,7 +416,20 @@ function loadImage(src) {
 }
 
 async function initGame() {
+  // Prevent double initialization
+  if (game.isInitialized) {
+    console.log('[Play] Already initialized, skipping');
+    return;
+  }
+  
+  console.log('[Play] Initializing...');
+  
   game.canvas = document.getElementById('gameCanvas');
+  if (!game.canvas) {
+    console.warn('[Play] Canvas not found, skipping initialization');
+    return;
+  }
+  
   game.ctx = game.canvas.getContext('2d');
 
   // Disable image smoothing for pixel art

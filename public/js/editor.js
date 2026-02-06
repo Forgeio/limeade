@@ -322,7 +322,20 @@ function drawPreviewQuadrant(ctx, tilesheet, mask, quadrant, destX, destY, destW
 }
 // Initialize the editor
 function initEditor() {
+  // Prevent double initialization
+  if (editor.isInitialized) {
+    console.log('[Editor] Already initialized, skipping');
+    return;
+  }
+  
+  console.log('[Editor] Initializing...');
+  
   editor.canvas = document.getElementById('editorCanvas');
+  if (!editor.canvas) {
+    console.warn('[Editor] Canvas not found, skipping initialization');
+    return;
+  }
+  
   editor.ctx = editor.canvas.getContext('2d');
   
   // Disable image smoothing for pixel art
