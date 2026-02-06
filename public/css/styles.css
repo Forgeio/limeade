@@ -217,6 +217,12 @@ body {
   height: 28px;
 }
 
+.site-logo {
+  height: 40px;
+  width: auto;
+  display: block;
+}
+
 .search-container {
   display: flex;
   align-items: center;

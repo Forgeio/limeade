@@ -4,350 +4,558 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Level - Limeade</title>
+  <link rel="icon" type="image/png" href="graphics/favicon.png">
   <link rel="stylesheet" href="css/styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
   <style>
-    .level-detail-container {
-      max-width: 1200px;
+    /* Specific styles for level page */
+    .level-container {
+      max-width: 900px;
       margin: 0 auto;
+      padding-bottom: 60px;
     }
 
+    /* Header Section */
     .level-header {
       background: var(--card-color);
       border-radius: 8px;
-      padding: 32px;
+      padding: 24px;
       margin-bottom: 24px;
       box-shadow: var(--shadow-sm);
     }
 
-    .level-title {
-      font-size: 32px;
-      font-weight: 700;
-      margin-bottom: 8px;
-      color: var(--text-primary);
-    }
-
-    .level-creator {
-      font-size: 14px;
-      color: var(--text-secondary);
+    .level-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
       margin-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 16px;
     }
 
-    .level-creator a {
-      color: var(--primary-color);
+    .level-title {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .level-creator-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-align: right;
+    }
+
+    .level-creator-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .level-creator-name {
+      font-weight: 500;
+      font-size: 16px;
+      color: var(--text-primary);
       text-decoration: none;
     }
 
-    .level-creator a:hover {
+    .level-creator-name:hover {
       text-decoration: underline;
+    }
+
+    .level-date {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .level-creator-avatar {
+      width: 40px;
+      height: 40px;
+      background: #eee;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: #555;
+      overflow: hidden;
+    }
+
+    .level-creator-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .level-media-row {
+      display: flex;
+      gap: 24px;
+      align-items: flex-start;
+    }
+
+    .level-thumbnail-container {
+      width: 480px;
+      aspect-ratio: 16/9;
+      background: #000;
+      border-radius: 4px;
+      overflow: hidden;
+      flex-shrink: 0;
+      border: 1px solid var(--border-color);
+      position: relative;
     }
 
     .level-thumbnail {
       width: 100%;
-      height: 300px;
-      background: #f5f5f5;
-      border-radius: 8px;
-      margin-bottom: 24px;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .level-quick-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      justify-content: center;
+      padding: 12px 0;
+    }
+
+    .quick-stat {
       display: flex;
       align-items: center;
-      justify-content: center;
-      border: 2px solid var(--border-color);
+      gap: 10px;
+      font-size: 20px;
+      color: var(--text-primary);
+      font-weight: 500;
     }
 
-    .level-thumbnail svg {
-      width: 80px;
-      height: 80px;
-      opacity: 0.3;
+    .quick-stat svg {
+      width: 32px;
+      height: 32px;
     }
 
-    .level-description {
+    /* Description Card */
+    .description-card {
+      background: var(--card-color);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 24px;
+      position: relative;
+      min-height: 120px;
+    }
+
+    .description-text {
       font-size: 16px;
       line-height: 1.6;
       color: var(--text-primary);
-      margin-bottom: 24px;
+      margin-bottom: 48px;
+      white-space: pre-wrap;
     }
-
-    .level-stats-row {
+    
+    .start-play-btn {
+      position: absolute;
+      bottom: 24px;
+      right: 24px;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 24px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
       display: flex;
-      gap: 32px;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-    }
-
-    .level-stat {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
-    .level-stat-value {
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--primary-color);
-    }
-
-    .level-stat-label {
-      font-size: 12px;
-      color: var(--text-secondary);
+      align-items: center;
+      gap: 8px;
+      transition: background 0.2s, transform 0.1s;
+      box-shadow: var(--shadow-md);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
 
-    .level-actions {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      flex-wrap: wrap;
-    }
-
-    .play-button {
-      background: var(--primary-color);
-      color: white;
-      border: none;
-      padding: 14px 32px;
-      border-radius: 4px;
-      font-size: 16px;
-      font-weight: 500;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      transition: all 0.2s;
-    }
-
-    .play-button:hover {
-      background: #28b02e;
-      transform: translateY(-2px);
-      box-shadow: var(--shadow-md);
-    }
-
-    .play-button svg {
-      width: 20px;
-      height: 20px;
-    }
-
-    .rating-buttons {
-      display: flex;
-      gap: 8px;
-    }
-
-    .rating-btn {
-      background: white;
-      border: 2px solid var(--border-color);
-      padding: 10px 20px;
-      border-radius: 4px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-      transition: all 0.2s;
-    }
-
-    .rating-btn:hover:not(:disabled) {
-      border-color: var(--primary-color);
+    .start-play-btn:hover {
+      background: #43a047; /* darker green */
       transform: translateY(-2px);
     }
 
-    .rating-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
+    .action-buttons {
+        position: absolute;
+        bottom: 24px;
+        left: 24px;
+        display: flex;
+        gap: 12px;
     }
 
-    .rating-btn.active-like {
-      background: #4caf50;
-      color: white;
-      border-color: #4caf50;
+    .rate-btn {
+        background: #f5f5f5;
+        border: 1px solid #ddd;
+        border-radius: 20px;
+        padding: 6px 16px;
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: #555;
     }
 
-    .rating-btn.active-dislike {
-      background: #ff6b6b;
-      color: white;
-      border-color: #ff6b6b;
+    .rate-btn:hover:not(:disabled) {
+        background: #e0e0e0;
     }
 
-    .rating-btn svg {
-      width: 20px;
-      height: 20px;
+    .rate-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
     }
 
-    .back-button {
-      background: transparent;
-      border: 2px solid var(--border-color);
-      padding: 10px 20px;
-      border-radius: 4px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 14px;
-      color: var(--text-primary);
-      transition: all 0.2s;
+    .rate-btn.active-like {
+        background: #e8f5e9;
+        border-color: #4caf50;
+        color: #2e7d32;
     }
 
-    .back-button:hover {
-      border-color: var(--primary-color);
-      color: var(--primary-color);
+    .rate-btn.active-dislike {
+        background: #ffebee;
+        border-color: #ef5350;
+        color: #c62828;
     }
 
-    .back-button svg {
-      width: 20px;
-      height: 20px;
+    /* Square Stats Cards */
+    .detail-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 24px;
     }
 
-    .comments-section {
+    .square-card {
       background: var(--card-color);
       border-radius: 8px;
-      padding: 32px;
-      margin-top: 24px;
       box-shadow: var(--shadow-sm);
-    }
-
-    .comments-header {
-      font-size: 24px;
-      font-weight: 700;
-      margin-bottom: 16px;
-      color: var(--text-primary);
-    }
-
-    .comments-placeholder {
+      aspect-ratio: 1; /* Square */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
       text-align: center;
-      padding: 48px;
+      padding: 16px;
+      position: relative;
+    }
+
+    .square-card h3 {
+      font-size: 14px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 12px 0;
+    }
+
+    .square-card-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .square-card-sub {
+      font-size: 14px;
       color: var(--text-secondary);
     }
 
-    .rating-note {
-      font-size: 12px;
-      color: var(--text-secondary);
-      margin-top: 8px;
+    /* Specific card styles */
+    .difficulty-card {
+      background: #f5f5f5; /* Default fallback */
+      color: white; /* Default text if colored */
+    }
+    
+    .difficulty-card .square-card-value, 
+    .difficulty-card .square-card-sub,
+    .difficulty-card h3 {
+        color: inherit;
+    }
+
+    .record-holder-info {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        margin-top: 8px;
+    }
+    
+    .record-holder-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        overflow: hidden;
+    }
+    
+    .record-holder-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .record-holder-name {
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    /* Leaderboards Section */
+    .leaderboards-container {
+      background: var(--card-color);
+      border-radius: 8px;
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .lb-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--border-color);
+        background: #f9f9f9;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .lb-tab {
+        padding: 16px 24px;
+        text-align: center;
+        cursor: pointer;
+        font-weight: 500;
+        color: var(--text-secondary);
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s;
+    }
+
+    .lb-tab:hover {
+        background: #eee;
+    }
+
+    .lb-tab.active {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
+        background: white;
+    }
+    
+    .lb-content {
+        padding: 0;
+        min-height: 200px;
+    }
+
+    .lb-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .lb-table th {
+        text-align: left;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        font-weight: 500;
+        font-size: 14px;
+    }
+    
+    .lb-table td {
+        padding: 12px 16px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .lb-rank {
+        width: 40px;
+        font-weight: bold;
+        color: var(--text-secondary);
+        text-align: center !important;
+    }
+
+    .lb-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    /* Back Button */
+    .back-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--text-secondary);
+        text-decoration: none;
+        margin: 24px 0 16px 0; /* Outside container */
+        font-weight: 500;
+        cursor: pointer;
+    }
+    
+    .back-btn:hover {
+        color: var(--primary-color);
+    }
+    
+    .icon {
+      width: 24px;
+      height: 24px;
+      fill: currentColor;
+    }
+
+    @media (max-width: 768px) {
+        .level-media-row {
+            flex-direction: column;
+        }
+        .level-thumbnail-container {
+            width: 100%;
+        }
+        .detail-stats-grid {
+            grid-template-columns: 1fr;
+        }
+        .square-card {
+            aspect-ratio: auto;
+            padding: 24px;
+        }
     }
   </style>
 </head>
 <body>
-  <!-- Navigation Bar -->
+
+  <!-- Hidden SVG Icons -->
+  <svg display="none">
+    <symbol id="icon-arrow-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+    <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+    <symbol id="icon-thumb-up" viewBox="0 0 24 24"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-1.91l-.01-.01L23 10z"/></symbol>
+    <symbol id="icon-thumb-down" viewBox="0 0 24 24"><path d="M15 3H6c-.83 0-1.54.5-1.84 1.22l-3.02 7.05c-.09.23-.14.47-.14.73v1.91l.01.01L1 14c0 1.1.9 2 2 2h6.31l-.95 4.57-.03.32c0 .41.17.79.44 1.06L9.83 23l6.59-6.59c.36-.36.58-.86.58-1.41V5c0-1.1-.9-2-2-2zm4 0v12h4V3h-4z"/></symbol>
+    <symbol id="icon-time" viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8 8-8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/></symbol>
+  </svg>
+
   <nav class="navbar">
-    <div class="nav-left">
-      <a href="/" class="site-brand">
-        <svg class="icon"><use href="icons.svg#icon-videogame"/></svg>
-        <span>Limeade</span>
-      </a>
-      <div class="search-container">
-        <svg class="icon"><use href="icons.svg#icon-search"/></svg>
-        <input type="text" class="search-input" placeholder="Search levels..." id="searchInput">
-      </div>
+    <div class="nav-brand">
+      <img src="graphics/favicon.png" alt="Logo" class="nav-logo">
+      <span>Limeade</span>
     </div>
-    <div class="nav-center">
-      <button class="nav-btn" onclick="navigateTo('discover')">
-        <svg class="icon"><use href="icons.svg#icon-public"/></svg>
-        <span>Discover</span>
-      </button>
-      <button class="nav-btn" onclick="navigateTo('leaderboards')">
-        <svg class="icon"><use href="icons.svg#icon-leaderboard"/></svg>
-        <span>Leaderboards</span>
-      </button>
+    <div class="nav-links">
+      <a href="discover" class="nav-link">Discover</a>
+      <a href="leaderboards" class="nav-link">Ranking</a>
+      <a href="editor" class="nav-link">Create</a>
     </div>
-    <div class="nav-right">
-      <div class="user-section" id="userSection">
-        <span class="user-name" id="userName">Guest User</span>
-        <div class="user-avatar" id="userAvatar">GU</div>
-        <div class="dropdown-menu" id="dropdownMenu">
-          <button class="dropdown-item create" onclick="createLevel()">
-            <svg class="icon"><use href="icons.svg#icon-add"/></svg>
-            <span>Create</span>
-          </button>
-          <button class="dropdown-item" onclick="openProfile()">
-            <svg class="icon"><use href="icons.svg#icon-person"/></svg>
-            <span>Profile</span>
-          </button>
-          <button class="dropdown-item" onclick="openSettings()">
-            <svg class="icon"><use href="icons.svg#icon-settings"/></svg>
-            <span>Settings</span>
-          </button>
-          <button class="dropdown-item" onclick="logout()">
-            <svg class="icon"><use href="icons.svg#icon-logout"/></svg>
-            <span>Logout</span>
-          </button>
-        </div>
+    <div class="nav-user" id="userSection">
+      <span class="user-name" id="userName">Guest</span>
+      <div class="user-avatar" id="userAvatar">?</div>
+      <div class="dropdown-menu" id="dropdownMenu">
+        <div class="dropdown-item" onclick="openProfile()">Profile</div>
+        <div class="dropdown-item" onclick="openSettings()">Settings</div>
+        <div class="dropdown-item" onclick="logout()">Logout</div>
       </div>
     </div>
   </nav>
 
-  <!-- Main Content -->
-  <div class="main-content">
-    <div class="level-detail-container">
-      <div class="level-header">
+  <div class="level-container">
+    <div onclick="goBack()" class="back-btn">
+      <svg class="icon"><use href="#icon-arrow-back"/></svg>
+      Back
+    </div>
+
+    <!-- Header Card -->
+    <div class="level-header">
+      <div class="level-header-top">
         <h1 class="level-title" id="levelTitle">Loading...</h1>
-        <div class="level-creator">
-          by <a href="#" id="creatorLink">Creator</a> • 
-          Published <span id="publishedDate">...</span>
+        <div class="level-creator-info">
+          <div class="level-creator-text">
+            <a href="#" class="level-creator-name" id="creatorLink">Unknown</a>
+            <span class="level-date" id="publishedDate">Jan 1, 2024</span>
+          </div>
+          <div class="level-creator-avatar" id="creatorAvatar">U</div>
         </div>
-
-        <div class="level-thumbnail" id="levelThumbnail">
-          <svg class="icon"><use href="icons.svg#icon-videogame"/></svg>
-        </div>
-
-        <p class="level-description" id="levelDescription">Loading level description...</p>
-
-        <div class="level-stats-row">
-          <div class="level-stat">
-            <span class="level-stat-value" id="statPlays">0</span>
-            <span class="level-stat-label">Plays</span>
-          </div>
-          <div class="level-stat">
-            <span class="level-stat-value" id="statClears">0</span>
-            <span class="level-stat-label">Clears</span>
-          </div>
-          <div class="level-stat">
-            <span class="level-stat-value" id="statClearRate">0%</span>
-            <span class="level-stat-label">Clear Rate</span>
-          </div>
-          <div class="level-stat">
-            <span class="level-stat-value" id="statLikes">0</span>
-            <span class="level-stat-label">Likes</span>
-          </div>
-          <div class="level-stat">
-            <span class="level-stat-value" id="statRecord">--:--</span>
-            <span class="level-stat-label">World Record</span>
-          </div>
-        </div>
-
-        <div class="level-actions">
-          <button class="play-button" onclick="playLevel()">
-            <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
-            <span>Play Level</span>
-          </button>
-
-          <div class="rating-buttons">
-            <button class="rating-btn" id="likeBtn" onclick="rateLevelLike()" disabled>
-              <svg class="icon"><use href="icons.svg#icon-thumb-up"/></svg>
-              <span id="likeCount">0</span>
-            </button>
-            <button class="rating-btn" id="dislikeBtn" onclick="rateLevelDislike()" disabled>
-              <svg class="icon"><use href="icons.svg#icon-thumb-down"/></svg>
-              <span id="dislikeCount">0</span>
-            </button>
-          </div>
-
-          <button class="back-button" onclick="goBack()">
-            <svg class="icon"><use href="icons.svg#icon-arrow-back"/></svg>
-            <span>Back to Discover</span>
-          </button>
+      </div>
+      
+      <div class="level-media-row">
+        <div class="level-thumbnail-container">
+          <img id="levelThumbnail" class="level-thumbnail" src="" alt="Level Thumbnail" onerror="this.style.display='none'">
+          <div id="thumbnailPlaceholder" style="background:#333; width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#555; position: absolute; top: 0; left: 0; z-index: -1;">No Thumbnail</div>
         </div>
         
-        <div class="rating-note" id="ratingNote"></div>
-      </div>
-
-      <!-- Comments Section (Placeholder) -->
-      <div class="comments-section">
-        <h2 class="comments-header">Comments</h2>
-        <div class="comments-placeholder">
-          <svg class="icon" style="width: 48px; height: 48px; opacity: 0.3; margin-bottom: 16px;">
-            <use href="icons.svg#icon-comment"/>
-          </svg>
-          <p>Comments feature coming soon!</p>
+        <div class="level-quick-stats">
+          <div class="quick-stat" title="Total Likes">
+            <svg class="icon" style="fill: #ef5350;"><use href="#icon-thumb-up"/></svg>
+            <span id="statLikes">0</span>
+          </div>
+          <div class="quick-stat" title="Total Plays">
+            <svg class="icon" style="fill: #4caf50;"><use href="#icon-play"/></svg>
+            <span id="statPlays">0</span>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- Description Card -->
+    <div class="description-card">
+      <div class="description-text" id="levelDescription"></div>
+      
+      <div class="action-buttons">
+          <button class="rate-btn" id="likeBtn" onclick="rateLevelLike()">
+             <svg class="icon" style="width:16px;height:16px;"><use href="#icon-thumb-up"/></svg> Like
+          </button>
+          <button class="rate-btn" id="dislikeBtn" onclick="rateLevelDislike()">
+             <svg class="icon" style="width:16px;height:16px;"><use href="#icon-thumb-down"/></svg> Dislike
+          </button>
+          <span id="ratingNote" style="font-size:12px; margin-left:8px; align-self:center; color:#888;"></span>
+      </div>
+
+      <button class="start-play-btn" onclick="playLevel()">
+        <svg class="icon" style="fill:white;"><use href="#icon-play"/></svg> Play Level
+      </button>
+    </div>
+
+    <!-- Stats 3-Square-Grid -->
+    <div class="detail-stats-grid">
+      <!-- Card 1: Clear Rate -->
+      <div class="square-card">
+        <h3>Clear Rate</h3>
+        <div class="square-card-value" id="statClearRate">0%</div>
+        <div class="square-card-sub" id="statClearDetail">0/0 clears</div>
+      </div>
+
+      <!-- Card 2: Fastest Time -->
+      <div class="square-card">
+        <h3>World Record</h3>
+        <div class="square-card-value" id="statRecord">--:--</div>
+        <div class="record-holder-info" id="recordHolderContainer" style="display:none;">
+          <div class="record-holder-avatar" id="recordHolderAvatar"></div>
+          <div class="record-holder-name" id="recordHolderName">Player</div>
+        </div>
+        <div id="noRecordLabel" class="square-card-sub">No clears yet</div>
+      </div>
+
+      <!-- Card 3: Difficulty -->
+      <div class="square-card difficulty-card" id="difficultyCard">
+        <h3>Difficulty</h3>
+        <div class="square-card-value" id="difficultyLabel">Normal</div>
+        <div class="square-card-sub" id="difficultySub">--</div>
+      </div>
+    </div>
+
+    <!-- Leaderboards -->
+    <div class="leaderboards-container">
+      <div class="lb-tabs">
+        <div class="lb-tab active" onclick="switchLeaderboard('fastest')" id="tab-fastest">Fastest Times</div>
+        <div class="lb-tab" onclick="switchLeaderboard('highest_rated')" id="tab-highest">Top Players</div>
+        <!-- <div class="lb-tab" onclick="switchLeaderboard('lowest_rated')">Lowest Rated Clears</div> -->
+      </div>
+      <div class="lb-content">
+        <table class="lb-table">
+          <thead>
+            <tr>
+              <th style="width: 60px; text-align: center;">Rank</th>
+              <th>Player</th>
+              <th style="text-align: right;">Time / Rating</th>
+              <th style="text-align: right;">Date</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody">
+            <tr><td colspan="4" style="text-align:center; padding: 24px;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
   </div>
 
   <script src="js/navigation.js"></script>

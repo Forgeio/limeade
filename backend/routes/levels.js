@@ -128,7 +128,7 @@ router.get('/:id', async (req, res) => {
       `SELECT l.*, u.username as creator_name, u.avatar_url as creator_avatar,
               ls.total_plays, ls.total_clears, ls.total_likes, ls.total_dislikes,
               ls.world_record_time, ls.world_record_holder_id, ls.clear_rate,
-              wr.username as world_record_holder_name
+              wr.username as world_record_holder_name, wr.avatar_url as world_record_holder_avatar
        FROM levels l
        LEFT JOIN users u ON l.creator_id = u.id
        LEFT JOIN level_stats ls ON l.id = ls.level_id

@@ -1,360 +1,294 @@
-// Level detail page functionality
-
+// Level detail page logic
 let currentLevelId = null;
-let currentLevel = null;
-let userStatus = { has_beaten: false, has_liked: null };
+let currentLeaderboardType = 'fastest_clear';
 
-// Get level ID from URL
-function getLevelIdFromUrl() {
-  const params = new URLSearchParams(window.location.search);
-  return params.get('id');
-}
+document.addEventListener('DOMContentLoaded', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const id = urlParams.get('id');
 
-// Initialize page
-window.addEventListener('DOMContentLoaded', async () => {
-  currentLevelId = getLevelIdFromUrl();
-  
-  if (!currentLevelId) {
-    // Redirect to home if no ID
-    window.location.href = '/';
+  if (!id) {
+    window.location.href = '/discover';
     return;
   }
-  
-  await loadLevel();
-  await loadUserStatus();
+
+  currentLevelId = id;
+  loadLevelDetails(id);
+  loadUserStatus(id);
+  loadLeaderboard(id, 'fastest_clear');
 });
 
-// Load level data
-async function loadLevel() {
+function goBack() {
+  if (document.referrer.includes(window.location.host)) {
+    window.history.back();
+  } else {
+    window.location.href = '/discover';
+  }
+}
+
+async function loadLevelDetails(id) {
   try {
-    const response = await fetch(`/api/levels/${currentLevelId}`);
-    
+    const response = await fetch(`/api/levels/${id}`);
     if (!response.ok) {
-      if (response.status === 404) {
-        alert('Level not found');
-        window.location.href = '/';
-        return;
-      }
-      throw new Error('Failed to fetch level');
+        if (response.status === 404) {
+            document.querySelector('.level-container').innerHTML = '<div style="text-align:center; padding:40px;"><h2>Level Not Found</h2><a href="/discover">Back to Discover</a></div>';
+            return;
+        }
+        throw new Error('Failed to load level');
     }
     
-    currentLevel = await response.json();
-    displayLevel(currentLevel);
+    const level = await response.json();
+    renderLevel(level);
   } catch (err) {
     console.error('Error loading level:', err);
-    alert('Error loading level');
-    window.location.href = '/';
+    alert('Error loading level details');
   }
 }
 
-// Load user's status with this level
-async function loadUserStatus() {
-  try {
-    const response = await fetch(`/api/levels/${currentLevelId}/user-status`);
-    
-    if (response.ok) {
-      userStatus = await response.json();
-      updateRatingButtons();
+async function loadUserStatus(id) {
+    try {
+        const response = await fetch(`/api/levels/${id}/user-status`);
+        if (response.ok) {
+            const status = await response.json();
+            updateLikeButtons(status.has_liked, status.has_beaten);
+        }
+    } catch (err) {
+        console.error('Error loading user status', err);
     }
-  } catch (err) {
-    console.error('Error loading user status:', err);
-  }
 }
 
-// Display level data
-function displayLevel(level) {
-  // Set title
-  document.getElementById('levelTitle').textContent = level.title || 'Untitled Level';
+function updateLikeButtons(hasLiked, hasBeaten) {
+    const likeBtn = document.getElementById('likeBtn');
+    const dislikeBtn = document.getElementById('dislikeBtn');
+    const ratingNote = document.getElementById('ratingNote');
+    
+    // Reset classes
+    likeBtn.classList.remove('active-like');
+    dislikeBtn.classList.remove('active-dislike');
+    
+    if (hasLiked === true) likeBtn.classList.add('active-like');
+    if (hasLiked === false) dislikeBtn.classList.add('active-dislike');
+    
+    if (!hasBeaten) {
+        likeBtn.disabled = true;
+        dislikeBtn.disabled = true;
+        ratingNote.textContent = '(Must clear level to rate)';
+    } else {
+        likeBtn.disabled = false;
+        dislikeBtn.disabled = false;
+        ratingNote.textContent = '';
+    }
+}
+
+async function rateLevelLike() {
+    rateLevel(true);
+}
+
+async function rateLevelDislike() {
+    rateLevel(false);
+}
+
+async function rateLevel(isLike) {
+    const likeBtn = document.getElementById('likeBtn');
+    if (likeBtn.disabled) return;
+    
+    try {
+        const response = await fetch(`/api/levels/${currentLevelId}/like`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ is_like: isLike })
+        });
+        
+        if (response.ok) {
+            // Reload level stats to update counts
+            loadLevelDetails(currentLevelId);
+            // Verify new status
+            loadUserStatus(currentLevelId);
+        } else {
+            const err = await response.json();
+            alert(err.error || 'Failed to rate level');
+        }
+    } catch (err) {
+        console.error('Rating failed', err);
+    }
+}
+
+function renderLevel(level) {
+  document.title = `${level.title} - Limeade`;
   
-  // Set creator
-  const creatorLink = document.getElementById('creatorLink');
-  creatorLink.textContent = level.creator_name || 'Unknown';
-  creatorLink.href = `/profile?id=${level.creator_id}`;
+  // Header Info
+  document.getElementById('levelTitle').textContent = level.title;
+  document.getElementById('creatorLink').textContent = level.creator_name || 'Unknown';
+  document.getElementById('creatorLink').href = `/profile?id=${level.creator_id}`;
   
-  // Set published date
-  const publishedDate = new Date(level.published_at);
-  document.getElementById('publishedDate').textContent = publishedDate.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
+  const date = new Date(level.published_at || level.created_at);
+  document.getElementById('publishedDate').textContent = date.toLocaleDateString(undefined, {
+      year: 'numeric', month: 'long', day: 'numeric'
   });
   
-  // Set description
-  document.getElementById('levelDescription').textContent = 
-    level.description || 'No description provided.';
+  // Avatar
+  const avatarEl = document.getElementById('creatorAvatar');
+  if (level.creator_avatar) {
+      avatarEl.innerHTML = `<img src="${level.creator_avatar}" alt="${level.creator_name}">`;
+  } else {
+      avatarEl.textContent = (level.creator_name || 'U').substring(0, 2).toUpperCase();
+  }
+
+  // Thumbnail
+  const thumbEl = document.getElementById('levelThumbnail');
+  if (level.thumbnail_path) {
+      thumbEl.src = level.thumbnail_path;
+      thumbEl.style.display = 'block';
+  } else {
+      thumbEl.style.display = 'none';
+  }
+
+  // Quick stats
+  document.getElementById('statLikes').textContent = (level.total_likes || 0);
+  document.getElementById('statPlays').textContent = (level.total_plays || 0);
   
-  // Set stats
-  document.getElementById('statPlays').textContent = level.total_plays || 0;
-  document.getElementById('statClears').textContent = level.total_clears || 0;
-  document.getElementById('statClearRate').textContent = 
-    level.clear_rate ? `${level.clear_rate}%` : '0%';
-  document.getElementById('statLikes').textContent = level.total_likes || 0;
-  
-  // Set world record
+  // Description
+  const descEl = document.getElementById('levelDescription');
+  if (level.description) {
+      descEl.textContent = level.description;
+      descEl.style.fontStyle = 'normal';
+      descEl.style.color = 'var(--text-primary)';
+  } else {
+      descEl.textContent = 'No description provided.';
+      descEl.style.fontStyle = 'italic';
+      descEl.style.color = 'var(--text-secondary)';
+  }
+
+  // Square Card 1: Clear Rate
+  document.getElementById('statClearRate').textContent = (level.clear_rate || '0.00') + '%';
+  document.getElementById('statClearDetail').textContent = 
+      `${level.total_clears || 0}/${level.total_plays || 0} clears`;
+
+  // Square Card 2: World Record
+  const recordEl = document.getElementById('statRecord');
+  const holderContainer = document.getElementById('recordHolderContainer');
+  const noRecordLabel = document.getElementById('noRecordLabel');
+
   if (level.world_record_time) {
-    const minutes = Math.floor(level.world_record_time / 60);
-    const seconds = level.world_record_time % 60;
-    document.getElementById('statRecord').textContent = 
-      `${minutes}:${String(seconds).padStart(2, '0')}`;
+      recordEl.textContent = formatTime(level.world_record_time);
+      noRecordLabel.style.display = 'none';
+      holderContainer.style.display = 'flex';
+      
+      document.getElementById('recordHolderName').textContent = level.world_record_holder_name || 'Unknown';
+      const holderAvatar = document.getElementById('recordHolderAvatar');
+      if (level.world_record_holder_avatar) {
+          holderAvatar.innerHTML = `<img src="${level.world_record_holder_avatar}">`;
+      } else {
+          holderAvatar.textContent = (level.world_record_holder_name || 'U').substring(0, 1).toUpperCase();
+      }
   } else {
-    document.getElementById('statRecord').textContent = '--:--';
+      recordEl.textContent = '--:--';
+      holderContainer.style.display = 'none';
+      noRecordLabel.style.display = 'block';
   }
-  
-  // Update like/dislike counts
-  document.getElementById('likeCount').textContent = level.total_likes || 0;
-  document.getElementById('dislikeCount').textContent = level.total_dislikes || 0;
-  
-  // Display difficulty rating info
-  displayDifficultyInfo(level);
-  
-  // Load level records
-  loadLevelRecords();
-}
 
-// Update rating buttons based on user status
-function updateRatingButtons() {
-  const likeBtn = document.getElementById('likeBtn');
-  const dislikeBtn = document.getElementById('dislikeBtn');
-  const ratingNote = document.getElementById('ratingNote');
+  // Square Card 3: Difficulty
+  const diffCard = document.getElementById('difficultyCard');
+  const diffLabel = document.getElementById('difficultyLabel');
+  const diffSub = document.getElementById('difficultySub');
   
-  // Enable/disable buttons based on whether user has beaten the level
-  likeBtn.disabled = !userStatus.has_beaten;
-  dislikeBtn.disabled = !userStatus.has_beaten;
-  
-  // Remove active classes
-  likeBtn.classList.remove('active-like');
-  dislikeBtn.classList.remove('active-dislike');
-  
-  // Set active state based on current rating
-  if (userStatus.has_liked === true) {
-    likeBtn.classList.add('active-like');
-  } else if (userStatus.has_liked === false) {
-    dislikeBtn.classList.add('active-dislike');
-  }
-  
-  // Update note
-  if (!userStatus.has_beaten) {
-    ratingNote.textContent = 'You must beat this level before you can rate it.';
-    ratingNote.style.color = 'var(--text-secondary)';
-  } else {
-    ratingNote.textContent = '';
+  if (level.difficulty_label) {
+      const { label, color, description, isNew, showRating } = level.difficulty_label;
+      diffCard.style.backgroundColor = color;
+      // Ensure text is white for colored backgrounds
+      diffCard.style.color = '#fff';
+      
+      diffLabel.textContent = label;
+      
+      if (isNew) {
+          diffSub.textContent = 'New';
+      } else if (showRating) {
+          diffSub.textContent = `Rating: ${level.difficulty_rating || '?'}`;
+      } else {
+          diffSub.textContent = 'Unrated';
+      }
   }
 }
 
-// Play level
 function playLevel() {
-  if (!currentLevelId) return;
   window.location.href = `/play?id=${currentLevelId}`;
 }
 
-// Rate level with like
-async function rateLevelLike() {
-  await rateLevel(true);
+function formatTime(ms) {
+  const seconds = Math.floor(ms / 1000);
+  const milliseconds = ms % 1000;
+  return `${seconds}.${milliseconds.toString().padStart(3, '0')}s`;
 }
 
-// Rate level with dislike
-async function rateLevelDislike() {
-  await rateLevel(false);
+function switchLeaderboard(type) {
+    // Update tabs
+    document.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+    if (type === 'fastest') document.getElementById('tab-fastest').classList.add('active');
+    if (type === 'highest_rated') document.getElementById('tab-highest').classList.add('active'); // Mapped to Top Players logic if needed
+
+    // Map UI type to API type
+    let apiType = 'fastest_clear';
+    if (type === 'highest_rated') apiType = 'highest_rated_clear'; // technically hard clears
+    // or just sort by SR? The API supports fastest_clear, highest_rated_clear, lowest_rated_clear
+
+    currentLeaderboardType = apiType;
+    loadLeaderboard(currentLevelId, apiType);
 }
 
-// Rate level
-async function rateLevel(isLike) {
-  if (!userStatus.has_beaten) {
-    alert('You must beat this level before you can rate it.');
-    return;
-  }
-  
-  try {
-    const response = await fetch(`/api/levels/${currentLevelId}/like`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ is_like: isLike })
-    });
+async function loadLeaderboard(id, type) {
+    const tbody = document.getElementById('leaderboardBody');
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 24px;">Loading...</td></tr>';
     
-    if (response.ok) {
-      // Update user status
-      userStatus.has_liked = isLike;
-      updateRatingButtons();
-      
-      // Reload level to get updated like/dislike counts
-      await loadLevel();
-    } else {
-      const data = await response.json();
-      alert(data.error || 'Failed to rate level');
+    try {
+        const response = await fetch(`/api/levels/${id}/records/${type}`);
+        if (!response.ok) throw new Error('Failed to load leaderboard');
+        
+        const data = await response.json();
+        const records = data.records || [];
+        
+        if (records.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 24px; color: #888;">No records yet. Be the first!</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = records.map((rec, index) => {
+            const date = new Date(rec.recorded_at).toLocaleDateString();
+            const avatarHtml = rec.avatar_url 
+                ? `<img src="${rec.avatar_url}" style="width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:8px;">`
+                : `<div style="display:inline-block;width:24px;height:24px;border-radius:50%;background:#eee;vertical-align:middle;margin-right:8px;text-align:center;line-height:24px;font-size:10px;font-weight:bold;color:#555;">${(rec.username||'U')[0]}</div>`;
+            
+            let valueDisplay = '';
+            if (type === 'fastest_clear') {
+                valueDisplay = formatTime(rec.completion_time);
+            } else {
+                // For rated clears, show SR they had
+                valueDisplay = `${rec.skill_rating || '?'} SR`;
+            }
+
+            // Top 3 medals
+            let rankDisplay = index + 1;
+            if (index === 0) rankDisplay = '🥇';
+            if (index === 1) rankDisplay = '🥈';
+            if (index === 2) rankDisplay = '🥉';
+
+            return `
+                <tr>
+                    <td class="lb-rank">${rankDisplay}</td>
+                    <td>
+                        <a href="/profile?id=${rec.user_id}" style="text-decoration:none; color:inherit; display:flex; align-items:center;">
+                            ${avatarHtml}
+                            <span style="font-weight:500">${rec.username || 'Unknown'}</span>
+                        </a>
+                    </td>
+                    <td style="text-align: right; font-family: monospace; font-size: 14px;">${valueDisplay}</td>
+                    <td style="text-align: right; font-size: 12px; color: #888;">${date}</td>
+                </tr>
+            `;
+        }).join('');
+        
+    } catch (err) {
+        console.error(err);
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 24px; color: var(--danger-color);">Failed to load records</td></tr>';
     }
-  } catch (err) {
-    console.error('Error rating level:', err);
-    alert('Error rating level');
-  }
-}
-
-// Go back to discover page
-function goBack() {
-  // Try to go back in history, or default to discover page
-  if (document.referrer && document.referrer.includes(window.location.host)) {
-    window.history.back();
-  } else {
-    window.location.href = 'discover.html';
-  }
-}
-
-// Display difficulty rating information
-function displayDifficultyInfo(level) {
-  const statsRow = document.querySelector('.level-stats-row');
-  
-  // Remove any existing difficulty stats to prevent duplication
-  const existingDifficultyStats = statsRow.querySelectorAll('.level-stat.difficulty-stat');
-  existingDifficultyStats.forEach(stat => stat.remove());
-  
-  if (level.difficulty_label) {
-    const dl = level.difficulty_label;
-    
-    // Add difficulty stat
-    const difficultyHTML = `
-      <div class="level-stat difficulty-stat">
-        <span class="level-stat-value">
-          <span class="rating-badge" style="background: ${dl.color};">
-            ${dl.label}
-          </span>
-        </span>
-        <span class="level-stat-label">Difficulty ${dl.uncertaintyBadge ? `(${dl.uncertaintyBadge})` : ''}</span>
-      </div>
-    `;
-    
-    statsRow.insertAdjacentHTML('beforeend', difficultyHTML);
-    
-    // Only show difficulty rating number if the level is rated (RD <= 150)
-    if (dl.showRating) {
-      const drHTML = `
-        <div class="level-stat difficulty-stat">
-          <span class="level-stat-value">${level.difficulty_rating || 1500}</span>
-          <span class="level-stat-label">Difficulty Rating</span>
-        </div>
-      `;
-      
-      statsRow.insertAdjacentHTML('beforeend', drHTML);
-    }
-  }
-  
-  // Add volatile indicator if needed
-  if (level.is_volatile) {
-    const volatileHTML = `
-      <div class="level-stat difficulty-stat">
-        <span class="level-stat-value" style="color: #ff9800;">⚠️ Volatile</span>
-        <span class="level-stat-label">Unpredictable</span>
-      </div>
-    `;
-    
-    statsRow.insertAdjacentHTML('beforeend', volatileHTML);
-  }
-}
-
-// Load level records (leaderboards)
-async function loadLevelRecords() {
-  const container = document.querySelector('.comments-section');
-  
-  if (!container) return;
-
-   // Remove previously rendered records to avoid duplication on refresh/rerender
-   document.querySelectorAll('.records-section').forEach(section => section.remove());
-  
-  try {
-    // Fetch different record types
-    const [fastestResponse, highestResponse, lowestResponse] = await Promise.all([
-      fetch(`/api/levels/${currentLevelId}/records/fastest_clear?limit=5`),
-      fetch(`/api/levels/${currentLevelId}/records/highest_rated_clear?limit=5`),
-      fetch(`/api/levels/${currentLevelId}/records/lowest_rated_clear?limit=5`)
-    ]);
-    
-    const fastest = fastestResponse.ok ? await fastestResponse.json() : { records: [] };
-    const highest = highestResponse.ok ? await highestResponse.json() : { records: [] };
-    const lowest = lowestResponse.ok ? await lowestResponse.json() : { records: [] };
-    
-    // Build records HTML
-    let recordsHTML = '<div class="records-section">';
-    
-    // Fastest clears
-    if (fastest.records && fastest.records.length > 0) {
-      recordsHTML += `
-        <div class="records-header">⚡ Fastest Clears</div>
-        <div class="records-list">
-          ${fastest.records.map((record, idx) => createRecordItem(record, idx + 1, 'time')).join('')}
-        </div>
-      `;
-    }
-    
-    // Highest rated clears
-    if (highest.records && highest.records.length > 0) {
-      recordsHTML += `
-        <div class="records-header" style="margin-top: 24px;">🏆 Highest Rated Clears</div>
-        <div class="records-list">
-          ${highest.records.map((record, idx) => createRecordItem(record, idx + 1, 'rating')).join('')}
-        </div>
-      `;
-    }
-    
-    // Lowest rated clears (impressive!)
-    if (lowest.records && lowest.records.length > 0) {
-      recordsHTML += `
-        <div class="records-header" style="margin-top: 24px;">💪 Lowest Rated Clears (Most Impressive)</div>
-        <div class="records-list">
-          ${lowest.records.map((record, idx) => createRecordItem(record, idx + 1, 'rating')).join('')}
-        </div>
-      `;
-    }
-    
-    recordsHTML += '</div>';
-    
-    // Insert before comments section
-    container.insertAdjacentHTML('beforebegin', recordsHTML);
-  } catch (err) {
-    console.error('Error loading level records:', err);
-  }
-}
-
-// Create record item HTML
-function createRecordItem(record, rank, type) {
-  const rankClass = rank === 1 ? 'gold' : rank === 2 ? 'silver' : rank === 3 ? 'bronze' : '';
-  
-  let statHTML = '';
-  if (type === 'time' && record.completion_time) {
-    const minutes = Math.floor(record.completion_time / 60);
-    const seconds = record.completion_time % 60;
-    statHTML = `
-      <div class="record-stat">
-        <svg class="icon"><use href="icons.svg#icon-timer"/></svg>
-        <span>${minutes}:${String(seconds).padStart(2, '0')}</span>
-      </div>
-    `;
-  }
-  
-  if (record.skill_rating) {
-    statHTML += `
-      <div class="record-stat">
-        <svg class="icon"><use href="icons.svg#icon-star"/></svg>
-        <span>SR: ${record.skill_rating}</span>
-      </div>
-    `;
-  }
-  
-  return `
-    <div class="record-item">
-      <div class="record-player">
-        <span class="record-rank ${rankClass}">${rank}.</span>
-        <span>${escapeHtml(record.username)}</span>
-      </div>
-      <div class="record-stats">
-        ${statHTML}
-      </div>
-    </div>
-  `;
-}
-
-// Helper function to escape HTML
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }

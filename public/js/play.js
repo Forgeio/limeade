@@ -21,9 +21,9 @@ const BUBBLE_JUMP_VELOCITY = -4;
 
 // Movement constantssss
 const PLAYER_SPEED = 4; 
-const GROUND_ACCELERATION = 0.3;
-const AIR_ACCELERATION = 0.2;
-const GROUND_FRICTION = 0.8;
+const GROUND_ACCELERATION = 0.2;
+const AIR_ACCELERATION = 0.25;
+const GROUND_FRICTION = 0.9;
 const AIR_FRICTION = 0.9;
 const TURN_MULTIPLIER = 1.8;
 
