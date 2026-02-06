@@ -71,6 +71,10 @@ const editor = {
   inventoryOpen: false,
   currentCategory: 'terrain',
   lastNpcText: '',
+  // Cleanup tracking
+  animationFrameId: null,
+  autoSaveIntervalId: null,
+  isInitialized: false,
   assets: {
     tilesheet: null,
     tilesheet2: null,
@@ -392,8 +396,43 @@ function initEditor() {
   });
   
   // Start auto-save and render loops
-  setInterval(autoSave, editor.autoSaveInterval);
-  requestAnimationFrame(gameLoop);
+  editor.autoSaveIntervalId = setInterval(autoSave, editor.autoSaveInterval);
+  editor.animationFrameId = requestAnimationFrame(gameLoop);
+  editor.isInitialized = true;
+}
+
+// Cleanup function to stop all loops and remove event listeners
+function cleanupEditor() {
+  if (!editor.isInitialized) return;
+  
+  console.log('[Editor] Cleaning up...');
+  
+  // Stop animation and interval loops
+  if (editor.animationFrameId) {
+    cancelAnimationFrame(editor.animationFrameId);
+    editor.animationFrameId = null;
+  }
+  
+  if (editor.autoSaveIntervalId) {
+    clearInterval(editor.autoSaveIntervalId);
+    editor.autoSaveIntervalId = null;
+  }
+  
+  // Remove event listeners
+  window.removeEventListener('resize', resizeCanvas);
+  document.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('keyup', handleKeyUp);
+  
+  // Remove canvas event listeners
+  if (editor.canvas) {
+    editor.canvas.removeEventListener('mousedown', handleMouseDown);
+    editor.canvas.removeEventListener('mousemove', handleMouseMove);
+    editor.canvas.removeEventListener('mouseup', handleMouseUp);
+    editor.canvas.removeEventListener('wheel', handleWheel);
+  }
+  
+  editor.isInitialized = false;
+  console.log('[Editor] Cleanup complete');
 }
 
 function setupDeleteConfirmModal() {
@@ -1224,7 +1263,7 @@ function gameLoop() {
     placeTile();
   }
   render();
-  requestAnimationFrame(gameLoop);
+  editor.animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 // Smoothly animate zoom towards target
@@ -2662,6 +2701,12 @@ function clampCamera() {
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', initEditor);
+window.addEventListener('spa:navigate', (e) => {
+  if (e.detail.path.startsWith('/editor')) {
+    initEditor();
+  }
+});
+window.addEventListener('spa:beforenavigate', cleanupEditor);
 
 // Publish Dialog Functions
 function showPublishDialog() {

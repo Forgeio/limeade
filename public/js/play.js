@@ -293,7 +293,10 @@ const game = {
     bgForest3: null,
     soundJump: null,
     soundLand: null
-  }
+  },
+  // Cleanup tracking
+  animationFrameId: null,
+  isInitialized: false
 };
 
 function loadAssets() {
@@ -439,9 +442,49 @@ async function initGame() {
         showError('Unable to load level.');
         return;
       }
-      requestAnimationFrame(gameLoop);
+      game.animationFrameId = requestAnimationFrame(gameLoop);
+      game.isInitialized = true;
     });
   });
+}
+
+// Cleanup function to stop render loop and remove event listeners
+function cleanupGame() {
+  if (!game.isInitialized) return;
+  
+  console.log('[Play] Cleaning up...');
+  
+  // Stop animation loop
+  if (game.animationFrameId) {
+    cancelAnimationFrame(game.animationFrameId);
+    game.animationFrameId = null;
+  }
+  
+  // Stop any playing music
+  if (game.currentMusic) {
+    try {
+      game.currentMusic.stop();
+    } catch (e) {
+      // Ignore errors
+    }
+    game.currentMusic = null;
+  }
+  
+  // Stop slide sound if playing
+  if (game.slideLoopNode) {
+    try {
+      game.slideLoopNode.stop();
+    } catch (e) {
+      // Ignore errors
+    }
+    game.slideLoopNode = null;
+  }
+  
+  // Remove event listeners
+  window.removeEventListener('resize', resizeCanvas);
+  
+  game.isInitialized = false;
+  console.log('[Play] Cleanup complete');
 }
 
 function resizeCanvas() {
@@ -1270,7 +1313,7 @@ function gameLoop(timestamp) {
   // If paused, render opacity overlay or menu?
   // The menu itself is HTML overlay so canvas render underneath is fine.
   
-  requestAnimationFrame(gameLoop);
+  game.animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function update() {
@@ -4421,3 +4464,9 @@ function updatePauseMenuContent() {
 }
 
 document.addEventListener('DOMContentLoaded', initGame);
+window.addEventListener('spa:navigate', (e) => {
+  if (e.detail.path.startsWith('/play')) {
+    initGame();
+  }
+});
+window.addEventListener('spa:beforenavigate', cleanupGame);

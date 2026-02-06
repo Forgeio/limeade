@@ -2037,46 +2037,28 @@ body {
   color: #ff6b6b;
 }
 
- 
- / *   P l a y   P a g e   L a y o u t   * / 
- 
- . p l a y - p a g e   { 
- 
-     d i s p l a y :   f l e x ; 
- 
-     f l e x - d i r e c t i o n :   c o l u m n ; 
- 
-     h e i g h t :   1 0 0 v h ; 
- 
-     o v e r f l o w :   h i d d e n ; 
- 
- } 
- 
- 
- 
- . p l a y - p a g e   . g a m e - c o n t a i n e r   { 
- 
-     f l e x :   1 ; 
- 
-     h e i g h t :   a u t o ; 
- 
-     p o s i t i o n :   r e l a t i v e ; 
- 
-     o v e r f l o w :   h i d d e n ; 
- 
- } 
- 
- 
- 
- . p l a y - p a g e   . g a m e - t o o l b a r   { 
- 
-     p o s i t i o n :   r e l a t i v e ; 
- 
-     z - i n d e x :   9 0 ; 
- 
- } 
- 
- 
+
+/* Play Page Layout */
+
+.play-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.play-page .game-container {
+  flex: 1;
+  height: auto;
+  position: relative;
+  overflow: hidden;
+}
+
+.play-page .game-toolbar {
+  position: relative;
+  z-index: 90;
+}
+
 .overlay-back-btn {
   position: absolute;
   top: 32px;
@@ -2111,3 +2093,40 @@ body {
   height: 20px;
 }
 
+/* SPA Loading Indicator */
+#spa-loading-indicator {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 9999;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+#spa-loading-indicator.active {
+  display: flex;
+}
+
+.spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(76, 175, 80, 0.2);
+  border-top-color: var(--primary-color);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}

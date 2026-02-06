@@ -1,9 +1,30 @@
 (function () {
-  const EXCLUDED_ROUTES = ['/play', '/editor', '/login', '/setup-username'];
+  const EXCLUDED_ROUTES = ['/login', '/setup-username'];
 
   function isExcluded(url) {
     const target = new URL(url, window.location.origin);
     return EXCLUDED_ROUTES.some((route) => target.pathname.startsWith(route));
+  }
+
+  function showLoadingIndicator() {
+    let indicator = document.getElementById('spa-loading-indicator');
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'spa-loading-indicator';
+      indicator.innerHTML = `
+        <div class="spinner"></div>
+        <div class="loading-text">Loading...</div>
+      `;
+      document.body.appendChild(indicator);
+    }
+    indicator.classList.add('active');
+  }
+
+  function hideLoadingIndicator() {
+    const indicator = document.getElementById('spa-loading-indicator');
+    if (indicator) {
+      indicator.classList.remove('active');
+    }
   }
 
   function updateNavActive(pathname) {
@@ -54,12 +75,18 @@
 
     if (current === next && !options.replace) return;
 
+    // Cleanup before navigating away
+    window.dispatchEvent(new CustomEvent('spa:beforenavigate', { detail: { path: target.pathname } }));
+
+    showLoadingIndicator();
+
     try {
       const response = await fetch(next, {
         headers: { 'X-Requested-With': 'spa' }
       });
 
       if (!response.ok) {
+        hideLoadingIndicator();
         window.location.href = url;
         return;
       }
@@ -69,12 +96,14 @@
       const newContent = doc.querySelector('#spa-content');
 
       if (!newContent) {
+        hideLoadingIndicator();
         window.location.href = url;
         return;
       }
 
       const currentContent = document.querySelector('#spa-content');
       if (!currentContent) {
+        hideLoadingIndicator();
         window.location.href = url;
         return;
       }
@@ -93,9 +122,12 @@
       }
 
       window.scrollTo({ top: 0, behavior: 'auto' });
+      
+      hideLoadingIndicator();
       window.dispatchEvent(new CustomEvent('spa:navigate', { detail: { path: target.pathname, search: target.search } }));
     } catch (err) {
       console.error('[SPA] Navigation failed', err);
+      hideLoadingIndicator();
       window.location.href = url;
     }
   }
