@@ -1,7 +1,46 @@
 // Common navigation functions
 
+// Load navbar dynamically
+async function loadNavbar() {
+  const navbarPlaceholder = document.getElementById('navbar-placeholder');
+  if (!navbarPlaceholder) return;
+  
+  try {
+    const response = await fetch('/navbar.html');
+    if (response.ok) {
+      const html = await response.text();
+      navbarPlaceholder.innerHTML = html;
+      
+      // Mark active page
+      markActivePage();
+    }
+  } catch (e) {
+    console.error('Failed to load navbar:', e);
+  }
+}
+
+// Mark the active page in navigation
+function markActivePage() {
+  const pathname = window.location.pathname;
+  const navButtons = document.querySelectorAll('.nav-btn');
+  
+  navButtons.forEach(btn => {
+    btn.classList.remove('active');
+    const onclick = btn.getAttribute('onclick');
+    if (onclick) {
+      const page = onclick.match(/navigateTo\('([^']+)'\)/);
+      if (page && pathname.includes(page[1])) {
+        btn.classList.add('active');
+      }
+    }
+  });
+}
+
 // Check authentication on page load
 window.addEventListener('DOMContentLoaded', async () => {
+  // Load navbar first
+  await loadNavbar();
+  
   // Sync session with backend
   try {
     const res = await fetch('/auth/user');

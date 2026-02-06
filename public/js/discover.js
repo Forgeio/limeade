@@ -2,24 +2,76 @@
 
 let currentTab = 'hot';
 let currentPage = 1;
+let searchQuery = '';
 const itemsPerPage = 12;
 
 // Initialize page
 window.addEventListener('DOMContentLoaded', () => {
   loadLevels();
+  
+  // Add search input listener
+  const searchInput = document.getElementById('searchInput');
+  if (searchInput) {
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+  }
+  
+  // Close filter menu when clicking outside
+  document.addEventListener('click', (e) => {
+    const filterMenu = document.getElementById('filterMenu');
+    const filterBtn = document.getElementById('filterBtn');
+    if (filterMenu && filterBtn && !filterMenu.contains(e.target) && !filterBtn.contains(e.target)) {
+      filterMenu.classList.remove('show');
+      filterBtn.classList.remove('active');
+    }
+  });
 });
 
-// Switch between tabs
+// Perform search
+function performSearch() {
+  const searchInput = document.getElementById('searchInput');
+  searchQuery = searchInput ? searchInput.value.trim() : '';
+  currentPage = 1;
+  loadLevels();
+}
+
+// Toggle filter menu
+function toggleFilterMenu() {
+  const filterMenu = document.getElementById('filterMenu');
+  const filterBtn = document.getElementById('filterBtn');
+  if (filterMenu && filterBtn) {
+    filterMenu.classList.toggle('show');
+    filterBtn.classList.toggle('active');
+  }
+}
+
+// Apply filters
+function applyFilters() {
+  const sortRadios = document.querySelectorAll('input[name="sort"]');
+  sortRadios.forEach(radio => {
+    if (radio.checked) {
+      currentTab = radio.value;
+    }
+  });
+  currentPage = 1;
+  loadLevels();
+  
+  // Close filter menu
+  const filterMenu = document.getElementById('filterMenu');
+  const filterBtn = document.getElementById('filterBtn');
+  if (filterMenu && filterBtn) {
+    filterMenu.classList.remove('show');
+    filterBtn.classList.remove('active');
+  }
+}
+
+// Switch between tabs (legacy support)
 function switchTab(tab) {
   currentTab = tab;
   currentPage = 1;
-  
-  // Update active tab styling
-  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-    tabBtn.classList.remove('active');
-  });
-  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-  
   loadLevels();
 }
 
@@ -28,8 +80,14 @@ async function loadLevels() {
   const container = document.getElementById('cardsContainer');
   
   try {
+    // Build query parameters
+    let url = `/api/levels?filter=${currentTab}&page=${currentPage}&limit=${itemsPerPage}`;
+    if (searchQuery) {
+      url += `&search=${encodeURIComponent(searchQuery)}`;
+    }
+    
     // Fetch levels from API
-    const response = await fetch(`/api/levels?filter=${currentTab}&page=${currentPage}&limit=${itemsPerPage}`);
+    const response = await fetch(url);
     
     if (!response.ok) {
       throw new Error('Failed to fetch levels');
@@ -90,12 +148,13 @@ function createLevelCard(level) {
   const escapedTitle = escapeHtml(level.title);
   const escapedDescription = escapeHtml(level.description || '');
   
-  // Format record time (convert seconds to MM:SS)
-  let recordTime = '0:00';
+  // Format record time (convert decimal seconds to M:SS.mmm)
+  let recordTime = '--:--';
   if (level.world_record_time) {
-    const minutes = Math.floor(level.world_record_time / 60);
-    const seconds = level.world_record_time % 60;
-    recordTime = `${minutes}:${String(seconds).padStart(2, '0')}`;
+    const totalSeconds = parseFloat(level.world_record_time);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    recordTime = `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
   }
   
   const thumbUrl = level.thumbnail_path ? level.thumbnail_path : '';

@@ -92,10 +92,11 @@ function displayLevel(level) {
   
   // Set world record
   if (level.world_record_time) {
-    const minutes = Math.floor(level.world_record_time / 60);
-    const seconds = level.world_record_time % 60;
+    const totalSeconds = parseFloat(level.world_record_time);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
     document.getElementById('statRecord').textContent = 
-      `${minutes}:${String(seconds).padStart(2, '0')}`;
+      `${minutes}:${seconds.toFixed(3).padStart(6, '0')}`;
   } else {
     document.getElementById('statRecord').textContent = '--:--';
   }
@@ -320,12 +321,13 @@ function createRecordItem(record, rank, type) {
   
   let statHTML = '';
   if (type === 'time' && record.completion_time) {
-    const minutes = Math.floor(record.completion_time / 60);
-    const seconds = record.completion_time % 60;
+    const totalSeconds = parseFloat(record.completion_time);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
     statHTML = `
       <div class="record-stat">
         <svg class="icon"><use href="icons.svg#icon-timer"/></svg>
-        <span>${minutes}:${String(seconds).padStart(2, '0')}</span>
+        <span>${minutes}:${seconds.toFixed(3).padStart(6, '0')}</span>
       </div>
     `;
   }
