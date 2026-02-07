@@ -293,7 +293,10 @@ const game = {
     bgForest3: null,
     soundJump: null,
     soundLand: null
-  }
+  },
+  // Cleanup tracking
+  animationFrameId: null,
+  isInitialized: false
 };
 
 function loadAssets() {
@@ -413,7 +416,20 @@ function loadImage(src) {
 }
 
 async function initGame() {
+  // Prevent double initialization
+  if (game.isInitialized) {
+    console.log('[Play] Already initialized, skipping');
+    return;
+  }
+  
+  console.log('[Play] Initializing...');
+  
   game.canvas = document.getElementById('gameCanvas');
+  if (!game.canvas) {
+    console.warn('[Play] Canvas not found, skipping initialization');
+    return;
+  }
+  
   game.ctx = game.canvas.getContext('2d');
 
   // Disable image smoothing for pixel art
@@ -439,9 +455,49 @@ async function initGame() {
         showError('Unable to load level.');
         return;
       }
-      requestAnimationFrame(gameLoop);
+      game.animationFrameId = requestAnimationFrame(gameLoop);
+      game.isInitialized = true;
     });
   });
+}
+
+// Cleanup function to stop render loop and remove event listeners
+function cleanupGame() {
+  if (!game.isInitialized) return;
+  
+  console.log('[Play] Cleaning up...');
+  
+  // Stop animation loop
+  if (game.animationFrameId) {
+    cancelAnimationFrame(game.animationFrameId);
+    game.animationFrameId = null;
+  }
+  
+  // Stop any playing music
+  if (game.currentMusic) {
+    try {
+      game.currentMusic.stop();
+    } catch (e) {
+      // Ignore errors
+    }
+    game.currentMusic = null;
+  }
+  
+  // Stop slide sound if playing
+  if (game.slideLoopNode) {
+    try {
+      game.slideLoopNode.stop();
+    } catch (e) {
+      // Ignore errors
+    }
+    game.slideLoopNode = null;
+  }
+  
+  // Remove event listeners
+  window.removeEventListener('resize', resizeCanvas);
+  
+  game.isInitialized = false;
+  console.log('[Play] Cleanup complete');
 }
 
 function resizeCanvas() {
@@ -1270,7 +1326,7 @@ function gameLoop(timestamp) {
   // If paused, render opacity overlay or menu?
   // The menu itself is HTML overlay so canvas render underneath is fine.
   
-  requestAnimationFrame(gameLoop);
+  game.animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 function update() {
@@ -4421,3 +4477,10 @@ function updatePauseMenuContent() {
 }
 
 document.addEventListener('DOMContentLoaded', initGame);
+window.addEventListener('spa:navigate', (e) => {
+  const currentPage = document.querySelector('#spa-content')?.dataset.page;
+  if (e.detail.path.startsWith('/play') && currentPage === 'play') {
+    initGame();
+  }
+});
+window.addEventListener('spa:beforenavigate', cleanupGame);

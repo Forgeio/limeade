@@ -1,41 +1,41 @@
 // Leaderboards page functionality
+(function() {
+  let currentTab = 'skill-rating';
+  let currentPage = 1;
+  const itemsPerPage = 15;
 
-let currentTab = 'skill-rating';
-let currentPage = 1;
-const itemsPerPage = 15;
+  // Initialize page
+  function initLeaderboardsPage() {
+    const container = document.getElementById('cardsContainer');
+    if (!container) return;
 
-// Initialize page
-function initLeaderboardsPage() {
-  const container = document.getElementById('cardsContainer');
-  if (!container) return;
+    currentTab = 'skill-rating';
+    currentPage = 1;
 
-  currentTab = 'skill-rating';
-  currentPage = 1;
+    document.querySelectorAll('.selector-tab').forEach(tabBtn => {
+      tabBtn.classList.remove('active');
+    });
+    document.querySelector('[data-tab="skill-rating"]')?.classList.add('active');
 
-  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-    tabBtn.classList.remove('active');
-  });
-  document.querySelector('[data-tab="skill-rating"]')?.classList.add('active');
+    loadPlayers();
+  }
 
-  loadPlayers();
-}
+  window.addEventListener('DOMContentLoaded', initLeaderboardsPage);
+  window.addEventListener('spa:navigate', initLeaderboardsPage);
 
-window.addEventListener('DOMContentLoaded', initLeaderboardsPage);
-window.addEventListener('spa:navigate', initLeaderboardsPage);
-
-// Switch between tabs
-function switchTab(tab) {
-  currentTab = tab;
-  currentPage = 1;
-  
-  // Update active tab styling
-  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-    tabBtn.classList.remove('active');
-  });
-  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-  
-  loadPlayers();
-}
+  // Switch between tabs
+  window.switchTab = function(tab) {
+    currentTab = tab;
+    currentPage = 1;
+    
+    // Update active tab styling
+    document.querySelectorAll('.selector-tab').forEach(tabBtn => {
+      tabBtn.classList.remove('active');
+    });
+    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    
+    loadPlayers();
+  }
 
 // Load players for current tab and page
 async function loadPlayers() {
@@ -182,31 +182,34 @@ function updatePagination(totalItems) {
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
   
+  if (!pageInfo || !prevBtn || !nextBtn) return;
+  
   pageInfo.textContent = `Page ${currentPage} of ${totalPages || 1}`;
   prevBtn.disabled = currentPage <= 1;
   nextBtn.disabled = currentPage >= totalPages;
 }
 
-// Pagination functions
-function prevPage() {
-  if (currentPage > 1) {
-    currentPage--;
+  // Pagination functions
+  window.prevPage = function() {
+    if (currentPage > 1) {
+      currentPage--;
+      loadPlayers();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  window.nextPage = function() {
+    currentPage++;
     loadPlayers();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-}
 
-function nextPage() {
-  currentPage++;
-  loadPlayers();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-// View player profile
-function viewProfile(playerId) {
-  if (typeof window.spaNavigate === 'function') {
-    window.spaNavigate(`/profile?id=${playerId}`);
-  } else {
-    window.location.href = `/profile?id=${playerId}`;
+  // View player profile
+  window.viewProfile = function(playerId) {
+    if (typeof window.spaNavigate === 'function') {
+      window.spaNavigate(`/profile?id=${playerId}`);
+    } else {
+      window.location.href = `/profile?id=${playerId}`;
+    }
   }
-}
+})();

@@ -1,15 +1,18 @@
 // Profile Page Logic
+(function() {
+  let currentTab = 'published';
+  let deleteConfirmResolver = null;
 
-let currentTab = 'published';
-let deleteConfirmResolver = null;
-
-function navigateInternal(url) {
-  if (typeof window.spaNavigate === 'function') {
-    window.spaNavigate(url);
-  } else {
-    window.location.href = url;
+  window.navigateInternal = function(url) {
+    if (typeof window.spaNavigate === 'function') {
+      window.spaNavigate(url);
+    } else {
+      window.location.href = url;
+    }
   }
-}
+  
+  // Create alias for internal use
+  const navigateInternal = window.navigateInternal;
 
 async function initProfilePage() {
   const profileHeader = document.querySelector('.profile-header');
@@ -167,24 +170,24 @@ function updateProfileDisplay(user) {
     }
 }
 
-function switchProfileTab(tab) {
-  // Update active tab styling
-  const tabs = document.querySelectorAll('.selector-tab');
-  tabs.forEach(t => t.classList.remove('active'));
-  
-  const activeTab = document.querySelector(`.selector-tab[data-tab="${tab}"]`);
-  if (activeTab) {
-    activeTab.classList.add('active');
-  }
+  window.switchProfileTab = function(tab) {
+    // Update active tab styling
+    const tabs = document.querySelectorAll('.selector-tab');
+    tabs.forEach(t => t.classList.remove('active'));
+    
+    const activeTab = document.querySelector(`.selector-tab[data-tab="${tab}"]`);
+    if (activeTab) {
+      activeTab.classList.add('active');
+    }
 
-  currentTab = tab;
-  // Get ID from URL or local storage
-  const urlParams = new URLSearchParams(window.location.search);
-  const profileId = urlParams.get('id');
-  const userId = profileId || (JSON.parse(localStorage.getItem('user')) || {}).id;
-  
-  loadTabContent(tab, userId);
-}
+    currentTab = tab;
+    // Get ID from URL or local storage
+    const urlParams = new URLSearchParams(window.location.search);
+    const profileId = urlParams.get('id');
+    const userId = profileId || (JSON.parse(localStorage.getItem('user')) || {}).id;
+    
+    loadTabContent(tab, userId);
+  }
 
 async function loadTabContent(tab, userId) {
   // Use passed userId or fall back to current user
@@ -259,29 +262,29 @@ function displayLevels(levels) {
   `}).join('');
 }
 
-// Delete a level (published or draft)
-async function deleteLevel(e, id) {
-  e.stopPropagation(); // Prevent card click
-  
-  const confirmed = await showDeleteConfirm('Are you sure you want to delete this level? This cannot be undone.');
-  if (confirmed) {
-    try {
-      const response = await fetch(`/api/levels/${id}`, {
-        method: 'DELETE'
-      });
-      
-      if (response.ok) {
-        // Refresh current tab
-        loadTabContent(currentTab);
-      } else {
-        alert('Failed to delete level');
+  // Delete a level (published or draft)
+  window.deleteLevel = async function(e, id) {
+    e.stopPropagation(); // Prevent card click
+    
+    const confirmed = await showDeleteConfirm('Are you sure you want to delete this level? This cannot be undone.');
+    if (confirmed) {
+      try {
+        const response = await fetch(`/api/levels/${id}`, {
+          method: 'DELETE'
+        });
+        
+        if (response.ok) {
+          // Refresh current tab
+          loadTabContent(currentTab);
+        } else {
+          alert('Failed to delete level');
+        }
+      } catch (err) {
+        console.error('Error deleting level:', err);
+        alert('Error deleting level');
       }
-    } catch (err) {
-      console.error('Error deleting level:', err);
-      alert('Error deleting level');
     }
   }
-}
 
 function displayDrafts(drafts) {
   const container = document.getElementById('cardsContainer');
@@ -330,16 +333,16 @@ function displayDrafts(drafts) {
   }).join('');
 }
 
-function publishDraft(e, id) {
-  e.stopPropagation();
-  // Send user to play mode to verify level before publishing
-  navigateInternal(`/play?id=${id}&mode=publish`);
-}
+  window.publishDraft = function(e, id) {
+    e.stopPropagation();
+    // Send user to play mode to verify level before publishing
+    navigateInternal(`/play?id=${id}&mode=publish`);
+  }
 
-function editDraft(e, id) {
-  e.stopPropagation();
-  navigateInternal(`/editor?id=${id}`);
-}
+  window.editDraft = function(e, id) {
+    e.stopPropagation();
+    navigateInternal(`/editor?id=${id}`);
+  }
 
 function setupDeleteConfirmModal() {
   const modal = document.getElementById('deleteConfirmModal');
@@ -390,8 +393,9 @@ function showDeleteConfirm(message) {
   });
 }
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+})();

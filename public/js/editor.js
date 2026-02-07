@@ -71,6 +71,10 @@ const editor = {
   inventoryOpen: false,
   currentCategory: 'terrain',
   lastNpcText: '',
+  // Cleanup tracking
+  animationFrameId: null,
+  autoSaveIntervalId: null,
+  isInitialized: false,
   assets: {
     tilesheet: null,
     tilesheet2: null,
@@ -318,7 +322,20 @@ function drawPreviewQuadrant(ctx, tilesheet, mask, quadrant, destX, destY, destW
 }
 // Initialize the editor
 function initEditor() {
+  // Prevent double initialization
+  if (editor.isInitialized) {
+    console.log('[Editor] Already initialized, skipping');
+    return;
+  }
+  
+  console.log('[Editor] Initializing...');
+  
   editor.canvas = document.getElementById('editorCanvas');
+  if (!editor.canvas) {
+    console.warn('[Editor] Canvas not found, skipping initialization');
+    return;
+  }
+  
   editor.ctx = editor.canvas.getContext('2d');
   
   // Disable image smoothing for pixel art
@@ -392,8 +409,43 @@ function initEditor() {
   });
   
   // Start auto-save and render loops
-  setInterval(autoSave, editor.autoSaveInterval);
-  requestAnimationFrame(gameLoop);
+  editor.autoSaveIntervalId = setInterval(autoSave, editor.autoSaveInterval);
+  editor.animationFrameId = requestAnimationFrame(gameLoop);
+  editor.isInitialized = true;
+}
+
+// Cleanup function to stop all loops and remove event listeners
+function cleanupEditor() {
+  if (!editor.isInitialized) return;
+  
+  console.log('[Editor] Cleaning up...');
+  
+  // Stop animation and interval loops
+  if (editor.animationFrameId) {
+    cancelAnimationFrame(editor.animationFrameId);
+    editor.animationFrameId = null;
+  }
+  
+  if (editor.autoSaveIntervalId) {
+    clearInterval(editor.autoSaveIntervalId);
+    editor.autoSaveIntervalId = null;
+  }
+  
+  // Remove event listeners
+  window.removeEventListener('resize', resizeCanvas);
+  document.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('keyup', handleKeyUp);
+  
+  // Remove canvas event listeners
+  if (editor.canvas) {
+    editor.canvas.removeEventListener('mousedown', handleMouseDown);
+    editor.canvas.removeEventListener('mousemove', handleMouseMove);
+    editor.canvas.removeEventListener('mouseup', handleMouseUp);
+    editor.canvas.removeEventListener('wheel', handleWheel);
+  }
+  
+  editor.isInitialized = false;
+  console.log('[Editor] Cleanup complete');
 }
 
 function setupDeleteConfirmModal() {
@@ -954,7 +1006,10 @@ function handleMouseMove(e) {
   const gridX = Math.floor((editor.mouseX + editor.cameraX) / scaledTileSize);
   const gridY = Math.floor((editor.mouseY + editor.cameraY) / scaledTileSize);
   
-  document.getElementById('positionText').textContent = `Position: ${gridX}, ${gridY}`;
+  const positionText = document.getElementById('positionText');
+  if (positionText) {
+    positionText.textContent = `Position: ${gridX}, ${gridY}`;
+  }
 }
 
 // Handle mouse up (for canvas)
@@ -1224,7 +1279,7 @@ function gameLoop() {
     placeTile();
   }
   render();
-  requestAnimationFrame(gameLoop);
+  editor.animationFrameId = requestAnimationFrame(gameLoop);
 }
 
 // Smoothly animate zoom towards target
@@ -1453,8 +1508,11 @@ function render() {
   }
   
   // Update level size display - and now zoom
-  document.getElementById('levelSizeText').textContent = 
-    `Level Size: ${editor.gridWidth}x${editor.gridHeight} | Zoom: ${Math.round(editor.zoom * 100)}%`;
+  const levelSizeText = document.getElementById('levelSizeText');
+  if (levelSizeText) {
+    levelSizeText.textContent = 
+      `Level Size: ${editor.gridWidth}x${editor.gridHeight} | Zoom: ${Math.round(editor.zoom * 100)}%`;
+  }
 }
 
 function renderEditorBackgrounds(ctx, cameraWorldX, cameraWorldY, zoom, canvasWidth, canvasHeight) {
@@ -2403,7 +2461,10 @@ async function autoSave() {
 
 // Update status text
 function updateStatus(text) {
-  document.getElementById('statusText').textContent = text;
+  const statusText = document.getElementById('statusText');
+  if (statusText) {
+    statusText.textContent = text;
+  }
 }
 
 // Resize modal functions
@@ -2662,6 +2723,13 @@ function clampCamera() {
 
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', initEditor);
+window.addEventListener('spa:navigate', (e) => {
+  const currentPage = document.querySelector('#spa-content')?.dataset.page;
+  if (e.detail.path.startsWith('/editor') && currentPage === 'editor') {
+    initEditor();
+  }
+});
+window.addEventListener('spa:beforenavigate', cleanupEditor);
 
 // Publish Dialog Functions
 function showPublishDialog() {
