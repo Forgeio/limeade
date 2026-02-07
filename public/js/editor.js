@@ -1006,7 +1006,10 @@ function handleMouseMove(e) {
   const gridX = Math.floor((editor.mouseX + editor.cameraX) / scaledTileSize);
   const gridY = Math.floor((editor.mouseY + editor.cameraY) / scaledTileSize);
   
-  document.getElementById('positionText').textContent = `Position: ${gridX}, ${gridY}`;
+  const positionText = document.getElementById('positionText');
+  if (positionText) {
+    positionText.textContent = `Position: ${gridX}, ${gridY}`;
+  }
 }
 
 // Handle mouse up (for canvas)
@@ -1505,8 +1508,11 @@ function render() {
   }
   
   // Update level size display - and now zoom
-  document.getElementById('levelSizeText').textContent = 
-    `Level Size: ${editor.gridWidth}x${editor.gridHeight} | Zoom: ${Math.round(editor.zoom * 100)}%`;
+  const levelSizeText = document.getElementById('levelSizeText');
+  if (levelSizeText) {
+    levelSizeText.textContent = 
+      `Level Size: ${editor.gridWidth}x${editor.gridHeight} | Zoom: ${Math.round(editor.zoom * 100)}%`;
+  }
 }
 
 function renderEditorBackgrounds(ctx, cameraWorldX, cameraWorldY, zoom, canvasWidth, canvasHeight) {
@@ -2455,7 +2461,10 @@ async function autoSave() {
 
 // Update status text
 function updateStatus(text) {
-  document.getElementById('statusText').textContent = text;
+  const statusText = document.getElementById('statusText');
+  if (statusText) {
+    statusText.textContent = text;
+  }
 }
 
 // Resize modal functions

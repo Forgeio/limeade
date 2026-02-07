@@ -182,6 +182,8 @@ function updatePagination(totalItems) {
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
   
+  if (!pageInfo || !prevBtn || !nextBtn) return;
+  
   pageInfo.textContent = `Page ${currentPage} of ${totalPages || 1}`;
   prevBtn.disabled = currentPage <= 1;
   nextBtn.disabled = currentPage >= totalPages;

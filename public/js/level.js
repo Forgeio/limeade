@@ -131,74 +131,100 @@ function renderLevel(level) {
   document.title = `${level.title} - Limeade`;
   
   // Header Info
-  document.getElementById('levelTitle').textContent = level.title;
-  document.getElementById('creatorLink').textContent = level.creator_name || 'Unknown';
-  document.getElementById('creatorLink').href = `/profile?id=${level.creator_id}`;
+  const levelTitle = document.getElementById('levelTitle');
+  const creatorLink = document.getElementById('creatorLink');
+  const publishedDate = document.getElementById('publishedDate');
+  
+  if (levelTitle) levelTitle.textContent = level.title;
+  if (creatorLink) {
+    creatorLink.textContent = level.creator_name || 'Unknown';
+    creatorLink.href = `/profile?id=${level.creator_id}`;
+  }
   
   const date = new Date(level.published_at || level.created_at);
-  document.getElementById('publishedDate').textContent = date.toLocaleDateString(undefined, {
-      year: 'numeric', month: 'long', day: 'numeric'
-  });
+  if (publishedDate) {
+    publishedDate.textContent = date.toLocaleDateString(undefined, {
+        year: 'numeric', month: 'long', day: 'numeric'
+    });
+  }
   
   // Avatar
   const avatarEl = document.getElementById('creatorAvatar');
-  if (level.creator_avatar) {
-      avatarEl.innerHTML = `<img src="${level.creator_avatar}" alt="${level.creator_name}">`;
-  } else {
-      avatarEl.textContent = (level.creator_name || 'U').substring(0, 2).toUpperCase();
+  if (avatarEl) {
+    if (level.creator_avatar) {
+        avatarEl.innerHTML = `<img src="${level.creator_avatar}" alt="${level.creator_name}">`;
+    } else {
+        avatarEl.textContent = (level.creator_name || 'U').substring(0, 2).toUpperCase();
+    }
   }
 
   // Thumbnail
   const thumbEl = document.getElementById('levelThumbnail');
-  if (level.thumbnail_path) {
-      thumbEl.src = level.thumbnail_path;
-      thumbEl.style.display = 'block';
-  } else {
-      thumbEl.style.display = 'none';
+  if (thumbEl) {
+    if (level.thumbnail_path) {
+        thumbEl.src = level.thumbnail_path;
+        thumbEl.style.display = 'block';
+    } else {
+        thumbEl.style.display = 'none';
+    }
   }
 
   // Quick stats
-  document.getElementById('statLikes').textContent = (level.total_likes || 0);
-  document.getElementById('statPlays').textContent = (level.total_plays || 0);
+  const statLikes = document.getElementById('statLikes');
+  const statPlays = document.getElementById('statPlays');
+  if (statLikes) statLikes.textContent = (level.total_likes || 0);
+  if (statPlays) statPlays.textContent = (level.total_plays || 0);
   
   // Description
   const descEl = document.getElementById('levelDescription');
-  if (level.description) {
-      descEl.textContent = level.description;
-      descEl.style.fontStyle = 'normal';
-      descEl.style.color = 'var(--text-primary)';
-  } else {
-      descEl.textContent = 'No description provided.';
-      descEl.style.fontStyle = 'italic';
-      descEl.style.color = 'var(--text-secondary)';
+  if (descEl) {
+    if (level.description) {
+        descEl.textContent = level.description;
+        descEl.style.fontStyle = 'normal';
+        descEl.style.color = 'var(--text-primary)';
+    } else {
+        descEl.textContent = 'No description provided.';
+        descEl.style.fontStyle = 'italic';
+        descEl.style.color = 'var(--text-secondary)';
+    }
   }
 
   // Square Card 1: Clear Rate
-  document.getElementById('statClearRate').textContent = (level.clear_rate || '0.00') + '%';
-  document.getElementById('statClearDetail').textContent = 
-      `${level.total_clears || 0}/${level.total_plays || 0} clears`;
+  const statClearRate = document.getElementById('statClearRate');
+  const statClearDetail = document.getElementById('statClearDetail');
+  if (statClearRate) statClearRate.textContent = (level.clear_rate || '0.00') + '%';
+  if (statClearDetail) {
+    statClearDetail.textContent = `${level.total_clears || 0}/${level.total_plays || 0} clears`;
+  }
 
   // Square Card 2: World Record
   const recordEl = document.getElementById('statRecord');
   const holderContainer = document.getElementById('recordHolderContainer');
   const noRecordLabel = document.getElementById('noRecordLabel');
 
-  if (level.world_record_time) {
-      recordEl.textContent = formatTime(level.world_record_time);
-      noRecordLabel.style.display = 'none';
-      holderContainer.style.display = 'flex';
-      
-      document.getElementById('recordHolderName').textContent = level.world_record_holder_name || 'Unknown';
-      const holderAvatar = document.getElementById('recordHolderAvatar');
-      if (level.world_record_holder_avatar) {
-          holderAvatar.innerHTML = `<img src="${level.world_record_holder_avatar}">`;
-      } else {
-          holderAvatar.textContent = (level.world_record_holder_name || 'U').substring(0, 1).toUpperCase();
-      }
-  } else {
-      recordEl.textContent = '--:--';
-      holderContainer.style.display = 'none';
+  if (recordEl && holderContainer && noRecordLabel) {
+    if (level.world_record_time) {
+        recordEl.textContent = formatTime(level.world_record_time);
+        noRecordLabel.style.display = 'none';
+        holderContainer.style.display = 'flex';
+        
+        const recordHolderName = document.getElementById('recordHolderName');
+        if (recordHolderName) {
+          recordHolderName.textContent = level.world_record_holder_name || 'Unknown';
+        }
+        const holderAvatar = document.getElementById('recordHolderAvatar');
+        if (holderAvatar) {
+          if (level.world_record_holder_avatar) {
+              holderAvatar.innerHTML = `<img src="${level.world_record_holder_avatar}">`;
+          } else {
+              holderAvatar.textContent = (level.world_record_holder_name || 'U').substring(0, 1).toUpperCase();
+          }
+        }
+    } else {
+        recordEl.textContent = '--:--';
+        holderContainer.style.display = 'none';
       noRecordLabel.style.display = 'block';
+    }
   }
 
   // Square Card 3: Difficulty
@@ -206,7 +232,7 @@ function renderLevel(level) {
   const diffLabel = document.getElementById('difficultyLabel');
   const diffSub = document.getElementById('difficultySub');
   
-  if (level.difficulty_label) {
+  if (diffCard && diffLabel && diffSub && level.difficulty_label) {
       const { label, color, description, isNew, showRating } = level.difficulty_label;
       diffCard.style.backgroundColor = color;
       // Ensure text is white for colored backgrounds
