@@ -12,48 +12,75 @@ const MAX_DRAFTS_PER_USER = 8;
 router.get('/', async (req, res) => {
   try {
     const filter = req.query.filter || 'hot';
+    const sort = (req.query.sort || '').toLowerCase();
+    const searchQuery = (req.query.q || '').trim();
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 12;
     const offset = (page - 1) * limit;
 
     let orderBy, dateFilter, dateValue;
-    
-    // Define filter logic
-    if (filter === 'new') {
-      // Most recent levels
-      orderBy = 'l.published_at DESC';
+
+    // Define sort logic (preferred for discover search)
+    if (sort) {
+      if (sort === 'likes') {
+        orderBy = 'ls.total_likes DESC NULLS LAST, l.published_at DESC';
+      } else if (sort === 'plays') {
+        orderBy = 'ls.total_plays DESC NULLS LAST, l.published_at DESC';
+      } else if (sort === 'clear_rate') {
+        orderBy = 'ls.clear_rate DESC NULLS LAST, l.published_at DESC';
+      } else if (sort === 'newest') {
+        orderBy = 'l.published_at DESC';
+      } else {
+        orderBy = 'ls.total_likes DESC NULLS LAST, l.published_at DESC';
+      }
       dateFilter = null;
       dateValue = null;
-    } else if (filter === 'hot') {
-      // Highest rated levels of the week
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      dateFilter = 'AND l.published_at >= $3';
-      dateValue = oneWeekAgo.toISOString();
-      orderBy = 'ls.total_likes DESC, l.published_at DESC';
-    } else if (filter === 'top') {
-      // Highest rated levels of the year
-      const oneYearAgo = new Date();
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-      dateFilter = 'AND l.published_at >= $3';
-      dateValue = oneYearAgo.toISOString();
-      orderBy = 'ls.total_likes DESC';
     } else {
-      // Default to hot
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      dateFilter = 'AND l.published_at >= $3';
-      dateValue = oneWeekAgo.toISOString();
-      orderBy = 'ls.total_likes DESC, l.published_at DESC';
+      // Legacy filter logic
+      if (filter === 'new') {
+        // Most recent levels
+        orderBy = 'l.published_at DESC';
+        dateFilter = null;
+        dateValue = null;
+      } else if (filter === 'hot') {
+        // Highest rated levels of the week
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        dateFilter = 'AND l.published_at >= $3';
+        dateValue = oneWeekAgo.toISOString();
+        orderBy = 'ls.total_likes DESC, l.published_at DESC';
+      } else if (filter === 'top') {
+        // Highest rated levels of the year
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        dateFilter = 'AND l.published_at >= $3';
+        dateValue = oneYearAgo.toISOString();
+        orderBy = 'ls.total_likes DESC';
+      } else {
+        // Default to hot
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        dateFilter = 'AND l.published_at >= $3';
+        dateValue = oneWeekAgo.toISOString();
+        orderBy = 'ls.total_likes DESC, l.published_at DESC';
+      }
     }
 
     // Build query with parameterized values
     const queryParams = [limit, offset];
+    let paramIndex = 3;
+    const whereParts = ['l.published = true'];
     if (dateValue) {
+      whereParts.push(`l.published_at >= $${paramIndex}`);
       queryParams.push(dateValue);
+      paramIndex += 1;
     }
-    
-    const whereClause = dateFilter || '';
+    if (searchQuery) {
+      whereParts.push(`l.title ILIKE $${paramIndex}`);
+      queryParams.push(`%${searchQuery}%`);
+      paramIndex += 1;
+    }
+    const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
     
     // orderBy is from a controlled whitelist, safe to interpolate
     const result = await db.query(
@@ -65,7 +92,7 @@ router.get('/', async (req, res) => {
        FROM levels l
        LEFT JOIN level_stats ls ON l.id = ls.level_id
        LEFT JOIN users u ON l.creator_id = u.id
-       WHERE l.published = true ${whereClause}
+       ${whereClause}
        ORDER BY ${orderBy}
        LIMIT $1 OFFSET $2`,
       queryParams
@@ -93,11 +120,23 @@ router.get('/', async (req, res) => {
       });
     }
 
-    // Count query with same date filter
-    const countParams = dateValue ? [dateValue] : [];
-    const countDateFilter = dateValue ? 'AND l.published_at >= $1' : '';
+    // Count query with same filters/search
+    const countParams = [];
+    let countIndex = 1;
+    const countWhereParts = ['l.published = true'];
+    if (dateValue) {
+      countWhereParts.push(`l.published_at >= $${countIndex}`);
+      countParams.push(dateValue);
+      countIndex += 1;
+    }
+    if (searchQuery) {
+      countWhereParts.push(`l.title ILIKE $${countIndex}`);
+      countParams.push(`%${searchQuery}%`);
+      countIndex += 1;
+    }
+    const countWhereClause = countWhereParts.length ? `WHERE ${countWhereParts.join(' AND ')}` : '';
     const countResult = await db.query(
-      `SELECT COUNT(*) FROM levels l WHERE l.published = true ${countDateFilter}`,
+      `SELECT COUNT(*) FROM levels l ${countWhereClause}`,
       countParams
     );
 

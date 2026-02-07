@@ -1,6 +1,8 @@
 // Discover page functionality
 (function() {
-  let currentTab = 'hot';
+  let currentSort = 'likes';
+  let searchQuery = '';
+  let searchDebounceId = null;
   let currentPage = 1;
   const itemsPerPage = 12;
 
@@ -12,13 +14,16 @@
     const container = document.getElementById('cardsContainer');
     if (!container) return;
 
-    currentTab = 'hot';
+    currentSort = 'likes';
+    searchQuery = '';
     currentPage = 1;
 
-    document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-      tabBtn.classList.remove('active');
-    });
-    document.querySelector('[data-tab="hot"]')?.classList.add('active');
+    // Rebind page-level handlers for inline HTML onclicks
+    window.prevPage = prevPage;
+    window.nextPage = nextPage;
+
+    bindDiscoverSearch();
+    updateFilterUI();
 
     loadLevels();
   }
@@ -26,18 +31,96 @@
   window.addEventListener('DOMContentLoaded', initDiscoverPage);
   window.addEventListener('spa:navigate', initDiscoverPage);
 
-  // Switch between tabs
-  window.switchTab = function(tab) {
-    currentTab = tab;
+  function bindDiscoverSearch() {
+    const input = document.getElementById('discoverSearchInput');
+    const filterBtn = document.getElementById('discoverFilterBtn');
+    const filterMenu = document.getElementById('discoverFilterMenu');
+    const searchBtn = document.getElementById('discoverSearchBtn');
+
+    if (input && input.dataset.bound !== 'true') {
+      input.dataset.bound = 'true';
+      input.value = searchQuery;
+      input.addEventListener('input', () => {
+        const nextValue = input.value.trim();
+        if (searchDebounceId) {
+          window.clearTimeout(searchDebounceId);
+        }
+        searchDebounceId = window.setTimeout(() => {
+          searchQuery = nextValue;
+          currentPage = 1;
+          loadLevels();
+        }, 300);
+      });
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          runSearch();
+        }
+      });
+    }
+
+    if (searchBtn && searchBtn.dataset.bound !== 'true') {
+      searchBtn.dataset.bound = 'true';
+      searchBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        runSearch();
+      });
+    }
+
+    if (filterBtn && filterMenu && filterBtn.dataset.bound !== 'true') {
+      filterBtn.dataset.bound = 'true';
+      filterBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isOpen = filterMenu.classList.toggle('open');
+        filterBtn.classList.toggle('active', isOpen);
+        filterBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      });
+    }
+
+    if (filterMenu && filterMenu.dataset.bound !== 'true') {
+      filterMenu.dataset.bound = 'true';
+      filterMenu.querySelectorAll('.filter-option').forEach(option => {
+        option.addEventListener('click', () => {
+          const nextSort = option.dataset.sort;
+          if (!nextSort || nextSort === currentSort) return;
+          currentSort = nextSort;
+          currentPage = 1;
+          updateFilterUI();
+          filterMenu.classList.remove('open');
+          filterBtn?.classList.remove('active');
+          filterBtn?.setAttribute('aria-expanded', 'false');
+          runSearch();
+        });
+      });
+    }
+
+    if (!window.__discoverFilterOutsideHandler) {
+      window.__discoverFilterOutsideHandler = true;
+      document.addEventListener('click', () => {
+        const menu = document.getElementById('discoverFilterMenu');
+        const btn = document.getElementById('discoverFilterBtn');
+        if (!menu || !btn) return;
+        menu.classList.remove('open');
+        btn.classList.remove('active');
+        btn.setAttribute('aria-expanded', 'false');
+      });
+    }
+  }
+
+  function runSearch() {
+    const input = document.getElementById('discoverSearchInput');
+    searchQuery = input ? input.value.trim() : '';
     currentPage = 1;
-    
-    // Update active tab styling
-    document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-      tabBtn.classList.remove('active');
-    });
-    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-    
     loadLevels();
+  }
+
+  function updateFilterUI() {
+    const filterMenu = document.getElementById('discoverFilterMenu');
+    if (!filterMenu) return;
+    filterMenu.querySelectorAll('.filter-option').forEach(option => {
+      option.classList.toggle('active', option.dataset.sort === currentSort);
+    });
   }
 
   // Load levels for current tab and page
@@ -46,7 +129,16 @@
   
   try {
     // Fetch levels from API
-    const response = await fetch(`/api/levels?filter=${currentTab}&page=${currentPage}&limit=${itemsPerPage}`);
+    const params = new URLSearchParams({
+      sort: currentSort,
+      page: String(currentPage),
+      limit: String(itemsPerPage)
+    });
+    if (searchQuery) {
+      params.set('q', searchQuery);
+    }
+
+    const response = await fetch(`/api/levels?${params.toString()}`);
     
     if (!response.ok) {
       throw new Error('Failed to fetch levels');
@@ -60,7 +152,7 @@
         <div class="empty-state" style="grid-column: 1 / -1;">
           <span class="material-icons">inbox</span>
           <h3>No levels found</h3>
-          <p>Check back later for new levels!</p>
+          <p>Try adjusting your search or sort options.</p>
         </div>
       `;
       updatePagination(0);
@@ -205,7 +297,7 @@ function updatePagination(totalItems) {
 }
 
   // Pagination functions
-  window.prevPage = function() {
+  function prevPage() {
     if (currentPage > 1) {
       currentPage--;
       loadLevels();
@@ -213,7 +305,7 @@ function updatePagination(totalItems) {
     }
   }
 
-  window.nextPage = function() {
+  function nextPage() {
     currentPage++;
     loadLevels();
     window.scrollTo({ top: 0, behavior: 'smooth' });

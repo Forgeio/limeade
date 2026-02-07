@@ -15,10 +15,6 @@
       <a href="/" class="site-brand">
         <img src="graphics/logo.png" alt="Limeade" class="site-logo">
       </a>
-      <div class="search-container">
-        <svg class="icon"><use href="icons.svg#icon-search"/></svg>
-        <input type="text" class="search-input" placeholder="Search levels..." id="searchInput">
-      </div>
     </div>
     <div class="nav-center">
       <button class="nav-btn active" data-nav="discover" onclick="navigateTo('discover')">
@@ -59,11 +55,25 @@
   <div id="spa-content" data-page="discover">
     <!-- Main Content -->
     <div class="main-content">
-    <!-- Selector Tabs -->
-    <div class="selector-tabs">
-      <button class="selector-tab active" data-tab="hot" onclick="switchTab('hot')">Hot</button>
-      <button class="selector-tab" data-tab="top" onclick="switchTab('top')">Top</button>
-      <button class="selector-tab" data-tab="new" onclick="switchTab('new')">New</button>
+    <!-- Search + Filter -->
+    <div class="discover-search-bar" id="discoverSearchBar">
+      <div class="discover-search-input">
+        <input type="text" id="discoverSearchInput" aria-label="Search levels">
+        <div class="discover-search-actions">
+          <button class="search-action-btn filter" id="discoverFilterBtn" aria-label="Sort" aria-haspopup="true" aria-expanded="false" aria-controls="discoverFilterMenu">
+            <svg class="icon"><use href="icons.svg#icon-sort"/></svg>
+          </button>
+          <button class="search-action-btn" id="discoverSearchBtn" aria-label="Search">
+            <svg class="icon"><use href="icons.svg#icon-search"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="filter-menu" id="discoverFilterMenu" role="menu">
+        <button type="button" class="filter-option active" data-sort="likes">Sort by Likes</button>
+        <button type="button" class="filter-option" data-sort="plays">Sort by Plays</button>
+        <button type="button" class="filter-option" data-sort="clear_rate">Sort by Clear Rate</button>
+        <button type="button" class="filter-option" data-sort="newest">Sort by Newest</button>
+      </div>
     </div>
 
     <!-- Cards Grid -->

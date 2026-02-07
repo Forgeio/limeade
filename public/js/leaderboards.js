@@ -6,6 +6,9 @@
 
   // Initialize page
   function initLeaderboardsPage() {
+    const pageRoot = document.querySelector('#spa-content[data-page="leaderboards"]');
+    if (!pageRoot) return;
+
     const container = document.getElementById('cardsContainer');
     if (!container) return;
 
@@ -17,6 +20,12 @@
     });
     document.querySelector('[data-tab="skill-rating"]')?.classList.add('active');
 
+    // Rebind page-level handlers for inline HTML onclicks
+    window.switchTab = switchTab;
+    window.prevPage = prevPage;
+    window.nextPage = nextPage;
+    window.viewProfile = viewProfile;
+
     loadPlayers();
   }
 
@@ -24,7 +33,7 @@
   window.addEventListener('spa:navigate', initLeaderboardsPage);
 
   // Switch between tabs
-  window.switchTab = function(tab) {
+  function switchTab(tab) {
     currentTab = tab;
     currentPage = 1;
     
@@ -190,7 +199,7 @@ function updatePagination(totalItems) {
 }
 
   // Pagination functions
-  window.prevPage = function() {
+  function prevPage() {
     if (currentPage > 1) {
       currentPage--;
       loadPlayers();
@@ -198,14 +207,14 @@ function updatePagination(totalItems) {
     }
   }
 
-  window.nextPage = function() {
+  function nextPage() {
     currentPage++;
     loadPlayers();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // View player profile
-  window.viewProfile = function(playerId) {
+  function viewProfile(playerId) {
     if (typeof window.spaNavigate === 'function') {
       window.spaNavigate(`/profile?id=${playerId}`);
     } else {
