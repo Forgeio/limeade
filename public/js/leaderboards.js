@@ -203,7 +203,7 @@ function updatePagination(totalItems) {
   }
 
   // View player profile
-  function viewProfile(playerId) {
+  window.viewProfile = function(playerId) {
     if (typeof window.spaNavigate === 'function') {
       window.spaNavigate(`/profile?id=${playerId}`);
     } else {

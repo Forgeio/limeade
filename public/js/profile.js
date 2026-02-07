@@ -3,13 +3,16 @@
   let currentTab = 'published';
   let deleteConfirmResolver = null;
 
-  function navigateInternal(url) {
+  window.navigateInternal = function(url) {
     if (typeof window.spaNavigate === 'function') {
       window.spaNavigate(url);
     } else {
       window.location.href = url;
     }
   }
+  
+  // Create alias for internal use
+  const navigateInternal = window.navigateInternal;
 
 async function initProfilePage() {
   const profileHeader = document.querySelector('.profile-header');
