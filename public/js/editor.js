@@ -419,6 +419,15 @@ function cleanupEditor() {
   if (!editor.isInitialized) return;
   
   console.log('[Editor] Cleaning up...');
+
+  if (editor.previewAudio) {
+    try {
+      editor.previewAudio.pause();
+    } catch (e) {
+      // Ignore errors
+    }
+    editor.previewAudio = null;
+  }
   
   // Stop animation and interval loops
   if (editor.animationFrameId) {

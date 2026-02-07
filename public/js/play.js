@@ -482,6 +482,16 @@ function cleanupGame() {
     }
     game.currentMusic = null;
   }
+
+  if (game.bgm) {
+    try {
+      game.bgm.pause();
+    } catch (e) {
+      // Ignore errors
+    }
+    game.bgm = null;
+    game.currentMusicPath = null;
+  }
   
   // Stop slide sound if playing
   if (game.slideLoopNode) {
