@@ -1,47 +1,47 @@
 // Discover page functionality
+(function() {
+  let currentTab = 'hot';
+  let currentPage = 1;
+  const itemsPerPage = 12;
 
-let currentTab = 'hot';
-let currentPage = 1;
-const itemsPerPage = 12;
+  // Initialize page
+  function initDiscoverPage() {
+    const pageRoot = document.querySelector('#spa-content[data-page="discover"]');
+    if (!pageRoot) return;
 
-// Initialize page
-function initDiscoverPage() {
-  const pageRoot = document.querySelector('#spa-content[data-page="discover"]');
-  if (!pageRoot) return;
+    const container = document.getElementById('cardsContainer');
+    if (!container) return;
 
-  const container = document.getElementById('cardsContainer');
-  if (!container) return;
+    currentTab = 'hot';
+    currentPage = 1;
 
-  currentTab = 'hot';
-  currentPage = 1;
+    document.querySelectorAll('.selector-tab').forEach(tabBtn => {
+      tabBtn.classList.remove('active');
+    });
+    document.querySelector('[data-tab="hot"]')?.classList.add('active');
 
-  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-    tabBtn.classList.remove('active');
-  });
-  document.querySelector('[data-tab="hot"]')?.classList.add('active');
+    loadLevels();
+  }
 
-  loadLevels();
-}
+  window.addEventListener('DOMContentLoaded', initDiscoverPage);
+  window.addEventListener('spa:navigate', initDiscoverPage);
 
-window.addEventListener('DOMContentLoaded', initDiscoverPage);
-window.addEventListener('spa:navigate', initDiscoverPage);
+  // Switch between tabs
+  window.switchTab = function(tab) {
+    currentTab = tab;
+    currentPage = 1;
+    
+    // Update active tab styling
+    document.querySelectorAll('.selector-tab').forEach(tabBtn => {
+      tabBtn.classList.remove('active');
+    });
+    document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
+    
+    loadLevels();
+  }
 
-// Switch between tabs
-function switchTab(tab) {
-  currentTab = tab;
-  currentPage = 1;
-  
-  // Update active tab styling
-  document.querySelectorAll('.selector-tab').forEach(tabBtn => {
-    tabBtn.classList.remove('active');
-  });
-  document.querySelector(`[data-tab="${tab}"]`).classList.add('active');
-  
-  loadLevels();
-}
-
-// Load levels for current tab and page
-async function loadLevels() {
+  // Load levels for current tab and page
+  async function loadLevels() {
   const container = document.getElementById('cardsContainer');
   
   try {
@@ -204,26 +204,27 @@ function updatePagination(totalItems) {
   nextBtn.disabled = currentPage >= totalPages;
 }
 
-// Pagination functions
-function prevPage() {
-  if (currentPage > 1) {
-    currentPage--;
+  // Pagination functions
+  window.prevPage = function() {
+    if (currentPage > 1) {
+      currentPage--;
+      loadLevels();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  window.nextPage = function() {
+    currentPage++;
     loadLevels();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-}
 
-function nextPage() {
-  currentPage++;
-  loadLevels();
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-// Play level function
-function playLevel(levelId) {
-  if (typeof window.spaNavigate === 'function') {
-    window.spaNavigate(`/play?id=${levelId}`);
-  } else {
-    window.location.href = `/play?id=${levelId}`;
+  // Play level function
+  function playLevel(levelId) {
+    if (typeof window.spaNavigate === 'function') {
+      window.spaNavigate(`/play?id=${levelId}`);
+    } else {
+      window.location.href = `/play?id=${levelId}`;
+    }
   }
-}
+})();
