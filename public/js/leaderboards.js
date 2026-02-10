@@ -113,14 +113,15 @@ function createPlayerCard(player, leaderboardType) {
     `<svg class="icon" style="width: 24px; height: 24px;"><use href="icons.svg#icon-trophy"/></svg>` : 
     player.rank;
   
-  const initials = player.username
+  const safeName = player.username || 'Unknown Player';
+  const initials = safeName
     .split(' ')
     .map(word => word[0])
     .join('')
     .toUpperCase()
     .substring(0, 2);
   
-  const escapedName = escapeHtml(player.username);
+  const escapedName = escapeHtml(safeName);
   
   // Determine main stat based on leaderboard type
   let mainStat = '';
