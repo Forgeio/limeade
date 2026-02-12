@@ -280,6 +280,46 @@ router.put('/:id/controls', async (req, res) => {
   }
 });
 
+// Update user's avatar
+router.put('/:id/avatar', async (req, res) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { id } = req.params;
+    const { avatar_data } = req.body;
+
+    if (req.user.id !== parseInt(id)) {
+      return res.status(403).json({ error: 'You can only update your own avatar' });
+    }
+
+    if (!avatar_data || typeof avatar_data !== 'string') {
+      return res.status(400).json({ error: 'Avatar data is required' });
+    }
+
+    const matches = avatar_data.match(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/);
+    if (!matches) {
+      return res.status(400).json({ error: 'Invalid avatar format' });
+    }
+
+    // Basic size guard (32x32 pngs are tiny); reject overly large payloads
+    if (avatar_data.length > 50000) {
+      return res.status(400).json({ error: 'Avatar payload too large' });
+    }
+
+    const result = await db.query(
+      'UPDATE users SET avatar_url = $1 WHERE id = $2 RETURNING avatar_url',
+      [avatar_data, id]
+    );
+
+    res.json({ avatar_url: result.rows[0].avatar_url });
+  } catch (err) {
+    console.error('Error updating avatar:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Update username
 router.put('/:id/username', async (req, res) => {
   try {

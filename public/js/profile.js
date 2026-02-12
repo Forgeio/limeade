@@ -126,14 +126,18 @@ function updateProfileDisplay(user) {
     }
 
     if (profileAvatar) {
+      if (user.avatar_url) {
+        profileAvatar.innerHTML = `<img class="avatar-image" src="${user.avatar_url}" alt="${displayName}">`;
+      } else {
         // Get initials from name
         const initials = displayName
-            .split(' ')
-            .map(word => word[0])
-            .join('')
-            .toUpperCase()
-            .substring(0, 2);
+          .split(' ')
+          .map(word => word[0])
+          .join('')
+          .toUpperCase()
+          .substring(0, 2);
         profileAvatar.textContent = initials;
+      }
     }
     
     // Update member since date

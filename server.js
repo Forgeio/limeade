@@ -1,6 +1,7 @@
 const express = require('express');
 const session = require('express-session');
 const passport = require('./backend/config/passport');
+const db = require('./backend/config/database');
 const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
@@ -31,6 +32,47 @@ app.use(
 );
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Development auth bypass (no OAuth in dev)
+if (process.env.NODE_ENV !== 'production') {
+  let cachedDevUser = null;
+
+  app.use(async (req, res, next) => {
+    try {
+      if (!cachedDevUser) {
+        const existing = await db.query(
+          'SELECT * FROM users WHERE oauth_provider = $1 AND oauth_id = $2 LIMIT 1',
+          ['dev', 'dev']
+        );
+
+        if (existing.rows.length > 0) {
+          cachedDevUser = existing.rows[0];
+        } else {
+          const created = await db.query(
+            `INSERT INTO users (username, email, oauth_provider, oauth_id, needs_username, created_at, last_login)
+             VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW())
+             RETURNING *`,
+            ['DevUser', 'dev@local.test', 'dev', 'dev']
+          );
+
+          cachedDevUser = created.rows[0];
+
+          await db.query(
+            'INSERT INTO user_stats (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING',
+            [cachedDevUser.id]
+          );
+        }
+      }
+
+      req.user = cachedDevUser;
+      req.isAuthenticated = () => true;
+      next();
+    } catch (err) {
+      console.error('Dev auth setup failed:', err);
+      next();
+    }
+  });
+}
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));

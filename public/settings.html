@@ -88,6 +88,16 @@
       font-weight: 500;
       border: 2px solid var(--border-color);
       flex-shrink: 0;
+      cursor: pointer;
+      overflow: hidden;
+    }
+
+    .avatar-preview img {
+      width: 100%;
+      height: 100%;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      object-fit: cover;
     }
 
     .username-beside-avatar {
@@ -193,6 +203,130 @@
       background: #e0e0e0;
       border-color: var(--primary-color);
     }
+
+    .avatar-editor-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.7);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 3000;
+    }
+
+    .avatar-editor-overlay.open {
+      display: flex;
+    }
+
+    .avatar-editor {
+      background: var(--card-color);
+      border-radius: 12px;
+      box-shadow: var(--shadow-lg);
+      width: 92%;
+      max-width: 900px;
+      padding: 24px;
+    }
+
+    .avatar-editor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .avatar-editor-title {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .avatar-editor-body {
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 24px;
+    }
+
+    .avatar-layer {
+      margin-bottom: 16px;
+    }
+
+    .avatar-layer h4 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+    }
+
+    .avatar-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+      gap: 8px;
+      background: #f5f5f5;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border-color);
+    }
+
+    .avatar-tile {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: white;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .avatar-tile.selected {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+    }
+
+    .avatar-tile canvas {
+      width: 32px;
+      height: 32px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .avatar-preview-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      background: #f8f8f8;
+      border-radius: 12px;
+      padding: 16px;
+      border: 1px solid var(--border-color);
+    }
+
+    .avatar-preview-canvas {
+      width: 160px;
+      height: 160px;
+      border-radius: 12px;
+      background: #424242;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    .avatar-editor-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    @media (max-width: 860px) {
+      .avatar-editor-body {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
@@ -251,7 +385,7 @@
         </div>
         
         <div class="avatar-preview-container">
-          <div class="avatar-preview" id="settingsAvatar">GU</div>
+          <div class="avatar-preview" id="settingsAvatar" title="Customize avatar">GU</div>
           <div class="username-beside-avatar">
             <input type="text" class="form-input" id="usernameInput" placeholder="Enter username" maxlength="30">
             <button class="btn btn-primary" id="saveUsernameBtn" onclick="saveProfile()">Save</button>
@@ -346,6 +480,43 @@
       </div>
 
     </div>
+    </div>
+  </div>
+
+  <!-- Avatar Editor Modal -->
+  <div class="avatar-editor-overlay" id="avatarEditorOverlay" aria-hidden="true">
+    <div class="avatar-editor" role="dialog" aria-modal="true" aria-label="Avatar editor">
+      <div class="avatar-editor-header">
+        <div class="avatar-editor-title">Customize Avatar</div>
+        <button class="btn btn-outline" id="closeAvatarEditor">Close</button>
+      </div>
+      <div class="avatar-editor-body">
+        <div>
+          <div class="avatar-layer">
+            <h4>Background</h4>
+            <div class="avatar-grid" id="avatarGridBackground"></div>
+          </div>
+          <div class="avatar-layer">
+            <h4>Body</h4>
+            <div class="avatar-grid" id="avatarGridBody"></div>
+          </div>
+          <div class="avatar-layer">
+            <h4>Face</h4>
+            <div class="avatar-grid" id="avatarGridFace"></div>
+          </div>
+          <div class="avatar-layer">
+            <h4>Accessory</h4>
+            <div class="avatar-grid" id="avatarGridAccessory"></div>
+          </div>
+        </div>
+        <div class="avatar-preview-panel">
+          <canvas id="avatarPreviewCanvas" class="avatar-preview-canvas" width="160" height="160"></canvas>
+          <div class="avatar-editor-actions">
+            <button class="btn btn-outline" id="resetAvatarSelection">Reset</button>
+            <button class="btn btn-primary" id="saveAvatarSelection">Save Avatar</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

@@ -62,15 +62,19 @@ function updateUserDisplay(user) {
     userName.textContent = user.name;
   }
   
-  if (userAvatar && user.name) {
-    // Get initials from name
-    const initials = user.name
-      .split(' ')
-      .map(word => word[0])
-      .join('')
-      .toUpperCase()
-      .substring(0, 2);
-    userAvatar.textContent = initials;
+  if (userAvatar) {
+    if (user.avatar) {
+      userAvatar.innerHTML = `<img class="avatar-image" src="${user.avatar}" alt="${user.name || 'User'}">`;
+    } else if (user.name) {
+      // Get initials from name
+      const initials = user.name
+        .split(' ')
+        .map(word => word[0])
+        .join('')
+        .toUpperCase()
+        .substring(0, 2);
+      userAvatar.textContent = initials;
+    }
   }
 }
 

@@ -151,7 +151,7 @@ function createPlayerCard(player, leaderboardType) {
         ${player.rank <= 3 ? rankIcon : player.rank}
       </div>
       <div class="player-avatar-large">
-        ${initials}
+        ${player.avatar_url ? `<img class="avatar-image" src="${player.avatar_url}" alt="${escapedName}">` : initials}
       </div>
       <div class="player-info">
         <div class="player-name">${escapedName}</div>
