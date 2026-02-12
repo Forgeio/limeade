@@ -41,6 +41,16 @@
     }
   }
 
+  function syncInlineStyles(doc) {
+    const styles = doc.querySelectorAll('style[data-spa-inline]');
+    styles.forEach((style) => {
+      const key = style.getAttribute('data-spa-inline') || '';
+      if (key && document.head.querySelector(`style[data-spa-inline="${key}"]`)) return;
+      const clone = style.cloneNode(true);
+      document.head.appendChild(clone);
+    });
+  }
+
   async function loadScripts(doc) {
     const scripts = Array.from(doc.querySelectorAll('script'));
     const tasks = [];
@@ -110,6 +120,7 @@
 
       document.title = doc.title || document.title;
       document.body.className = doc.body.className;
+      syncInlineStyles(doc);
       currentContent.replaceWith(newContent);
 
       updateNavActive(target.pathname);

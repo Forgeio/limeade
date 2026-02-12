@@ -2,6 +2,7 @@
 (function() {
   let currentTab = 'published';
   let deleteConfirmResolver = null;
+  let profileUser = null;
 
   window.navigateInternal = function(url) {
     if (typeof window.spaNavigate === 'function') {
@@ -68,7 +69,8 @@ async function initProfilePage() {
         const user = await fetchUserProfile(profileId);
         console.log('[Profile] Fetched user:', user);
         if (user) {
-            updateProfileDisplay(user);
+          profileUser = user;
+          updateProfileDisplay(user);
             // Show content with fade-in immediately after updating display
             const profileHeader = document.querySelector('.profile-header');
             if (profileHeader) {
@@ -226,44 +228,142 @@ async function loadTabContent(tab, userId) {
   }
 }
 
+// Profile level card builder (shared for published and drafts)
+function createProfileLevelCard(level, isDraft) {
+  const id = level.id;
+  const title = escapeHtml(level.title || (isDraft ? 'Untitled Draft' : 'Untitled Level'));
+  const description = escapeHtml(level.description || (isDraft ? 'Draft level' : ''));
+  const thumbUrl = level.thumbnail_path ? level.thumbnail_path : '';
+  const thumbStyle = thumbUrl ? `background-image: url('${thumbUrl}'); background-size: cover; background-position: center;` : '';
+  const iconStyle = thumbUrl ? 'display: none;' : 'width: 48px; height: 48px;';
+
+  const badge = isDraft ? '<div class="difficulty-badge" style="background: #9e9e9e;">Draft</div>' : buildDifficultyBadge(level);
+  const volatileBadge = level.is_volatile ? '<div class="volatile-badge" title="Volatile / Unpredictable difficulty">⚠️</div>' : '';
+  const avatar = buildCreatorAvatar();
+  const recordTime = formatRecordTime(level.world_record_time);
+  const updatedDate = level.updated_at ? formatDate(level.updated_at) : '';
+
+  const statBlock = isDraft ? `
+    <div class="stat-item">
+      <svg class="icon"><use href="icons.svg#icon-calendar"/></svg>
+      <span>Updated ${updatedDate || '—'}</span>
+    </div>
+    <div class="stat-item">
+      <svg class="icon"><use href="icons.svg#icon-grid-on"/></svg>
+      <span>${(level.level_data?.width || 0)}×${(level.level_data?.height || 0)}</span>
+    </div>
+  ` : `
+    <div class="stat-item">
+      <svg class="icon"><use href="icons.svg#icon-thumb-up"/></svg>
+      <span>${level.total_likes || 0}</span>
+    </div>
+    <div class="stat-item">
+      <svg class="icon"><use href="icons.svg#icon-thumb-down"/></svg>
+      <span>${level.total_dislikes || 0}</span>
+    </div>
+    <div class="stat-item">
+      <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
+      <span>${level.total_plays || 0}</span>
+    </div>
+  `;
+
+  const footerLeft = isDraft ? `
+    <div class="record-time">
+      <svg class="icon"><use href="icons.svg#icon-edit"/></svg>
+      <span>Draft ready</span>
+    </div>
+  ` : `
+    <div class="record-time">
+      <svg class="icon"><use href="icons.svg#icon-timer"/></svg>
+      <span>${recordTime}</span>
+    </div>
+  `;
+
+  const actions = isDraft ? `
+    <div class="level-card-actions">
+      <button class="secondary" onclick="editDraft(event, ${id})">Edit</button>
+      <button class="primary" onclick="publishDraft(event, ${id})">Publish</button>
+      <button class="icon-btn" onclick="deleteLevel(event, ${id})" title="Delete Draft">
+        <svg class="icon"><use href="icons.svg#icon-delete"/></svg>
+      </button>
+    </div>
+  ` : `
+    <button class="play-btn" data-level-id="${id}" onclick="navigateInternal('/play?id=${id}')">
+      <svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg>
+      <span>Play</span>
+    </button>
+  `;
+
+  const cardClick = isDraft ? ' onclick="editDraft(event, ' + id + ')"' : ' onclick="navigateInternal(\'/play?id=' + id + '\')"';
+
+  return `
+    <div class="level-card profile-level-card" data-level-id="${id}"${cardClick}>
+      <div class="level-card-image" style="${thumbStyle}">
+        <svg class="icon" style="${iconStyle}"><use href="icons.svg#icon-videogame"/></svg>
+        ${badge || ''}
+        ${volatileBadge}
+      </div>
+      <div class="level-card-content">
+        <div class="level-card-header">
+          <div class="level-card-title">${title}</div>
+          ${avatar}
+        </div>
+        <p class="level-card-description">${description}</p>
+        <div class="level-card-stats">${statBlock}</div>
+        <div class="level-card-footer">
+          ${footerLeft}
+          ${actions}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildCreatorAvatar() {
+  const displayName = profileUser?.username || 'Player';
+  if (profileUser?.avatar_url) {
+    return `<div class="avatar-badge"><img src="${profileUser.avatar_url}" alt="${displayName}"></div>`;
+  }
+  const initials = displayName.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+  return `<div class="avatar-badge">${initials}</div>`;
+}
+
+function buildDifficultyBadge(level) {
+  if (!level.difficulty_label) return '';
+  const dl = level.difficulty_label;
+  const uncertainty = (dl.isUncertain && !dl.isNew) ? `<span class="uncertainty-indicator" title="${dl.uncertaintyBadge}">?</span>` : '';
+  return `<div class="difficulty-badge" style="background: ${dl.color};" title="${dl.description}">${dl.label}${uncertainty}</div>`;
+}
+
+function formatRecordTime(seconds) {
+  if (!seconds && seconds !== 0) return '—';
+  const minutes = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  return `${minutes}:${String(sec).padStart(2, '0')}`;
+}
+
+function formatDate(dateString) {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 function displayLevels(levels) {
   const container = document.getElementById('cardsContainer');
   
-  // Ensure container uses grid layout for published levels
-  container.className = 'cards-grid';
+  container.className = 'cards-grid profile-level-grid';
   
   if (levels.length === 0) {
     container.innerHTML = `
-      <div style="grid-column: 1 / -1; text-align: center; color: var(--text-secondary); padding: 48px;">
-        <svg class="icon" style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5;"><use href="icons.svg#icon-videogame"/></svg>
+      <div class="profile-empty" style="grid-column: 1 / -1;">
+        <svg class="icon" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5;"><use href="icons.svg#icon-videogame"/></svg>
         <p>No published levels yet.</p>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = levels.map(level => {
-    const thumbUrl = level.thumbnail_path || '';
-    const imgHtml = thumbUrl 
-      ? `<div style="width:100%; height:100%; background-image: url('${thumbUrl}'); background-size: cover; background-position: center;"></div>`
-      : `<div class="placeholder-image"><svg class="icon" style="width: 48px; height: 48px; opacity: 0.3;"><use href="icons.svg#icon-videogame"/></svg></div>`;
-      
-    return `
-    <div class="card" onclick="navigateInternal('/play?id=${level.id}')">
-      <div class="card-image">
-        ${imgHtml}
-      </div>
-      <div class="card-content">
-        <h3 class="card-title">${escapeHtml(level.title)}</h3>
-        <p class="card-description">${escapeHtml(level.description || 'No description')}</p>
-        <div class="card-stats">
-          <span><svg class="icon"><use href="icons.svg#icon-play-arrow"/></svg> ${level.total_plays || 0}</span>
-          <span><svg class="icon"><use href="icons.svg#icon-check-circle"/></svg> ${level.total_clears || 0}</span>
-          <span><svg class="icon"><use href="icons.svg#icon-favorite"/></svg> ${level.total_likes || 0}</span>
-        </div>
-      </div>
-    </div>
-  `}).join('');
+  container.innerHTML = levels.map(level => createProfileLevelCard(level, false)).join('');
 }
 
   // Delete a level (published or draft)
@@ -293,48 +393,48 @@ function displayLevels(levels) {
 function displayDrafts(drafts) {
   const container = document.getElementById('cardsContainer');
   
-  // Change container to use vertical layout
+  // Use legacy horizontal layout for drafts
   container.className = 'drafts-list';
   
   if (drafts.length === 0) {
     container.innerHTML = `
-      <div style="text-align: center; color: var(--text-secondary); padding: 48px;">
-        <svg class="icon" style="width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5;"><use href="icons.svg#icon-videogame"/></svg>
+      <div class="profile-empty">
+        <svg class="icon" style="width: 48px; height: 48px; margin-bottom: 12px; opacity: 0.5;"><use href="icons.svg#icon-videogame"/></svg>
         <p>No drafts yet. Create one from the editor!</p>
       </div>
     `;
     return;
   }
 
-  container.innerHTML = drafts.map(draft => {
-    const updatedDate = new Date(draft.updated_at);
-    const formattedDate = updatedDate.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
-    
-    return `
-      <div class="draft-card-horizontal" onclick="editDraft(event, ${draft.id})">
-        <button class="delete-btn" onclick="deleteLevel(event, ${draft.id})" title="Delete Draft">
-          <svg class="icon"><use href="icons.svg#icon-delete"/></svg>
-        </button>
-        
-        <div class="draft-card-main">
-          <div class="draft-card-header">
-            <h3 class="level-card-title">${escapeHtml(draft.title || 'Untitled Draft')}</h3>
-            <span class="draft-badge">Draft</span>
-          </div>
-          <p class="draft-card-date">Last edited: ${formattedDate}</p>
+  container.innerHTML = drafts.map(draft => createDraftCard(draft)).join('');
+}
+
+function createDraftCard(draft) {
+  const id = draft.id;
+  const title = escapeHtml(draft.title || 'Untitled Draft');
+  const description = draft.description && draft.description.trim() ? escapeHtml(draft.description) : '';
+  const updatedDate = draft.updated_at ? formatDate(draft.updated_at) : '';
+  const metaText = updatedDate ? `Updated ${updatedDate}` : 'Recently updated';
+
+  return `
+    <div class="draft-card-horizontal" data-level-id="${id}" onclick="editDraft(event, ${id})">
+      <button class="icon-btn delete-btn" onclick="deleteLevel(event, ${id})" title="Delete Draft">
+        <svg class="icon"><use href="icons.svg#icon-delete"/></svg>
+      </button>
+      <div class="draft-card-main">
+        <div class="draft-card-header">
+          <div class="level-card-title">${title}</div>
+          <span class="draft-badge">Draft</span>
         </div>
-        
-        <div class="draft-card-actions">
-          <button class="draft-edit-btn" onclick="editDraft(event, ${draft.id})">Edit</button>
-          <button class="draft-publish-btn" onclick="publishDraft(event, ${draft.id})">Publish</button>
-        </div>
+        <p class="draft-card-meta">${metaText}</p>
+        ${description ? `<p class="level-card-description">${description}</p>` : ''}
       </div>
-    `;
-  }).join('');
+      <div class="draft-card-actions">
+        <button class="secondary" onclick="editDraft(event, ${id})">Edit</button>
+        <button class="primary" onclick="publishDraft(event, ${id})">Publish</button>
+      </div>
+    </div>
+  `;
 }
 
   window.publishDraft = function(e, id) {

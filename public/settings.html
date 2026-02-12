@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="graphics/favicon.png">
   <link rel="stylesheet" href="css/styles.css">
   <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-  <style>
+  <style data-spa-inline="settings">
     .settings-container {
       background: var(--card-color);
       border-radius: 8px;
@@ -78,7 +78,7 @@
     .avatar-preview {
       width: 120px;
       height: 120px;
-      border-radius: 50%;
+      border-radius: 0;
       background: #424242;
       color: white;
       display: flex;
@@ -385,7 +385,7 @@
         </div>
         
         <div class="avatar-preview-container">
-          <div class="avatar-preview" id="settingsAvatar" title="Customize avatar">GU</div>
+          <div class="avatar-preview" id="settingsAvatar" title="Customize avatar" role="button" tabindex="0">GU</div>
           <div class="username-beside-avatar">
             <input type="text" class="form-input" id="usernameInput" placeholder="Enter username" maxlength="30">
             <button class="btn btn-primary" id="saveUsernameBtn" onclick="saveProfile()">Save</button>

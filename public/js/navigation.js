@@ -4,15 +4,20 @@
 async function initNavigation() {
   // Sync session with backend
   try {
+    const existingRaw = localStorage.getItem('user');
+    const existingUser = existingRaw ? JSON.parse(existingRaw) : {};
+
     const res = await fetch('/auth/user');
     if (res.ok) {
       const data = await res.json();
-      localStorage.setItem('user', JSON.stringify({
-        name: data.username,
-        avatar: data.avatar_url,
-        provider: data.oauth_provider,
-        id: data.id
-      }));
+      // Preserve any previously cached avatar if backend does not return one
+      const mergedUser = {
+        name: data.username || existingUser.name,
+        avatar: data.avatar_url || existingUser.avatar,
+        provider: data.oauth_provider || existingUser.provider,
+        id: data.id || existingUser.id
+      };
+      localStorage.setItem('user', JSON.stringify(mergedUser));
     } else if (res.status === 401) {
       localStorage.removeItem('user');
     }
@@ -63,8 +68,9 @@ function updateUserDisplay(user) {
   }
   
   if (userAvatar) {
-    if (user.avatar) {
-      userAvatar.innerHTML = `<img class="avatar-image" src="${user.avatar}" alt="${user.name || 'User'}">`;
+    const avatarUrl = user.avatar || user.avatar_url;
+    if (avatarUrl) {
+      userAvatar.innerHTML = `<img class="avatar-image" src="${avatarUrl}" alt="${user.name || 'User'}">`;
     } else if (user.name) {
       // Get initials from name
       const initials = user.name

@@ -104,6 +104,13 @@ function stopGamepadCapture() {
 async function initSettingsPage() {
     if (!document.getElementById('settingsAvatar')) return;
 
+    // Rebind inline handlers after SPA navigations
+    window.captureKey = captureKey;
+    window.captureGamepad = captureGamepad;
+    window.saveControls = saveControls;
+    window.resetControls = resetControls;
+    window.saveVibrations = saveVibrations;
+
     // Load user data from API
     try {
         const response = await fetch('/auth/user');
@@ -187,6 +194,12 @@ function bindAvatarEditor() {
     if (settingsAvatar && !settingsAvatar.dataset.bound) {
         settingsAvatar.dataset.bound = 'true';
         settingsAvatar.addEventListener('click', openAvatarEditor);
+        settingsAvatar.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                openAvatarEditor();
+            }
+        });
     }
 
     if (closeBtn && !closeBtn.dataset.bound) {
